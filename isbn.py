@@ -236,19 +236,39 @@ def obter_metadados_completos(isbn: str) -> dict | None:
         variantes.append(isbn_original)
     logger.info("   Pesquisando metadados para: %s", isbn)
 
-    # 1. CBL (scraping — prioridade para livros brasileiros)
-    placeholders = {"O Conto", "O Subtitle", ""}
+    # 1. CBL — API Azure Cognitive Search (prioridade para livros brasileiros)
+    cbl_url = "https://isbn-search-br.search.windows.net/indexes/isbn-index/docs/search?api-version=2021-04-30-Preview"
+    cbl_headers = {
+        "api-key": "100216A23C5AEE390338BBD19EA86D29",
+        "Content-Type": "application/json",
+    }
     for variante in variantes:
         try:
-            url = f"https://www.cblservicos.org.br/isbn/pesquisa/?page=1&filtro=isbn&q={variante}"
-            resposta = requests.get(url, timeout=15)
+            body = {
+                "search": variante,
+                "searchFields": "RowKey,FormattedKey",
+                "top": 1,
+                "select": "Title,Subtitle,AuthorsStr,Imprint,RowKey,FormattedKey",
+            }
+            resposta = requests.post(cbl_url, headers=cbl_headers, json=body, timeout=10)
             resposta.raise_for_status()
-            soup = BeautifulSoup(resposta.text, "html.parser")
-            titulo_tag = soup.find("h4")
-            if titulo_tag:
-                titulo = titulo_tag.get_text(strip=True)
-                if titulo not in placeholders:
-                    return {"titulo": titulo, "autor": "S/A", "editora": "S/E"}
+            dados = resposta.json()
+            resultados = dados.get("value", [])
+            if resultados:
+                item = resultados[0]
+                # Confirma que o ISBN retornado corresponde ao pesquisado
+                rk = item.get("RowKey", "").replace("-", "")
+                fk = item.get("FormattedKey", "").replace("-", "")
+                if isbn_limpo in (rk, fk):
+                    titulo = item.get("Title", "S/T")
+                    subtitulo = item.get("Subtitle")
+                    if subtitulo:
+                        titulo = f"{titulo} — {subtitulo}"
+                    return {
+                        "titulo": titulo,
+                        "autor": item.get("AuthorsStr", "S/A") or "S/A",
+                        "editora": item.get("Imprint", "S/E") or "S/E",
+                    }
         except requests.RequestException as e:
             logger.debug("CBL indisponível (%s): %s", variante, e)
         except Exception as e:
