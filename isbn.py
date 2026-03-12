@@ -162,16 +162,14 @@ def obter_alvo() -> tuple[str, str]:
         return ("pasta", caminho) if caminho else ("pasta", "")
 
 
-def extrair_isbn_do_texto(texto: str, manter_formatacao: bool = True) -> str | None:
-    """Localiza o ISBN no texto e mantém hífens/espaços se solicitado."""
+def extrair_isbn_do_texto(texto: str) -> str | None:
+    """Localiza o ISBN no texto e retorna somente dígitos (sem espaços/hífens)."""
     if not texto:
         return None
     padrao = r"(?i)ISBN(?:-1[03])?:?\s*((?:97[89][\s\-]?)?(?:\d[\s\-]?){9}[\dX])"
     match = re.search(padrao, texto)
     if match:
         isbn_bruto = match.group(1).strip()
-        if manter_formatacao:
-            return isbn_bruto
         return re.sub(r"[^0-9X]", "", isbn_bruto.upper())
     return None
 
