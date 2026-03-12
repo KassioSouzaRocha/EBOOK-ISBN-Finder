@@ -164,6 +164,26 @@ def gravar_e_renomear(caminho: str, dados: dict, ext: str) -> str:
     return os.path.basename(caminho)
 
 
+# --- CORREÇÃO MANUAL ---
+
+def solicitar_isbn_manual(motivo: str) -> str | None:
+    """Solicita que o usuário informe um ISBN manualmente no terminal.
+
+    Args:
+        motivo: Mensagem descrevendo por que o ISBN precisa ser corrigido.
+
+    Returns:
+        O ISBN digitado (com hífens/espaços preservados) ou None se pulado.
+    """
+    print(f"\n  ⚠️  {motivo}")
+    print("  Digite o ISBN correto (ou pressione Enter para pular): ", end="", flush=True)
+    resposta = input().strip()
+    if not resposta:
+        logger.info("   Pulado pelo usuário.")
+        return None
+    return resposta
+
+
 # --- PONTO DE ENTRADA ---
 
 def iniciar():
@@ -214,8 +234,26 @@ def iniciar():
                 logger.info("   Sucesso: %s", novo)
             else:
                 logger.warning("   ISBN %s encontrado, mas sem dados nas APIs.", isbn)
+                isbn_manual = solicitar_isbn_manual(
+                    f"ISBN '{isbn}' não retornou resultados nas APIs."
+                )
+                if isbn_manual:
+                    dados = obter_metadados_completos(isbn_manual)
+                    if dados:
+                        novo = gravar_e_renomear(caminho, dados, ext)
+                        logger.info("   Sucesso (manual): %s", novo)
+                    else:
+                        logger.warning("   ISBN manual '%s' também sem resultados. Pulando.", isbn_manual)
         else:
             logger.warning("   ISBN não localizado nas 10 páginas.")
+            isbn_manual = solicitar_isbn_manual("ISBN não encontrado automaticamente.")
+            if isbn_manual:
+                dados = obter_metadados_completos(isbn_manual)
+                if dados:
+                    novo = gravar_e_renomear(caminho, dados, ext)
+                    logger.info("   Sucesso (manual): %s", novo)
+                else:
+                    logger.warning("   ISBN manual '%s' sem resultados nas APIs. Pulando.", isbn_manual)
 
         time.sleep(1)
 
