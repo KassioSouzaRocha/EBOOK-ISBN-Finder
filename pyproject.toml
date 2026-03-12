@@ -1,0 +1,32 @@
+[project]
+name = "isbn-renamer"
+version = "0.1.0"
+description = "Renomeia livros PDF/EPUB extraindo ISBN e buscando metadados via CBL e Google Books"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.12.0",
+    "ebooklib>=0.20",
+    "lxml>=5.0.0",
+    "pdf2image>=1.17.0",
+    "pdfminer.six>=20231228",
+    "pillow>=10.2.0",
+    "pytesseract>=0.3.10",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
