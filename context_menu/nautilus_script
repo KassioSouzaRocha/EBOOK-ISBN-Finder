@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# Script Nautilus: "Renomear com ISBN"
+# Instalar em: ~/.local/share/nautilus/scripts/Renomear com ISBN
+# Permissão: chmod +x "~/.local/share/nautilus/scripts/Renomear com ISBN"
+# ─────────────────────────────────────────────────────────────────────────────
+
+# O Nautilus passa os caminhos selecionados em $NAUTILUS_SCRIPT_SELECTED_FILE_PATHS
+# Pega o primeiro caminho; se for arquivo, usa a pasta-pai.
+PRIMEIRO=$(echo "$NAUTILUS_SCRIPT_SELECTED_FILE_PATHS" | head -1 | sed 's/\r//')
+
+if [ -d "$PRIMEIRO" ]; then
+    PASTA="$PRIMEIRO"
+else
+    PASTA=$(dirname "$PRIMEIRO")
+fi
+
+# Diretório de instalação do ISBN Renamer (ajustado pelo install.sh)
+INSTALL_DIR="INSTALL_DIR_PLACEHOLDER"
+
+# Abre terminal para exibir o progresso
+if command -v gnome-terminal &>/dev/null; then
+    gnome-terminal -- bash -c "cd '$INSTALL_DIR' && uv run isbn.py --pasta '$PASTA'; echo; echo 'Pressione Enter para fechar...'; read"
+elif command -v xterm &>/dev/null; then
+    xterm -hold -e bash -c "cd '$INSTALL_DIR' && uv run isbn.py --pasta '$PASTA'"
+else
+    # Sem terminal gráfico disponível, roda em background (log no syslog)
+    cd "$INSTALL_DIR" && uv run isbn.py --pasta "$PASTA" &
+fi

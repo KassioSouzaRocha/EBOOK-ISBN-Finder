@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Service
+X-KDE-ServiceTypes=KonqPopupMenu/Plugin
+MimeType=inode/directory;
+Actions=renomear_isbn;
+X-KDE-Priority=TopLevel
+
+[Desktop Action renomear_isbn]
+Name=Renomear com ISBN
+Name[pt_BR]=Renomear com ISBN
+Icon=accessories-text-editor
+Exec=bash -c 'cd "INSTALL_DIR_PLACEHOLDER" && konsole --noclose -e bash -c "uv run isbn.py --pasta \"%f\"; echo; read -p \"Pressione Enter para fechar...\"' %u

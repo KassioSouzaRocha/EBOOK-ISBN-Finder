@@ -175,13 +175,29 @@ if (Get-Command uv -ErrorAction SilentlyContinue) {
 }
 Write-Host ""
 
+# ─── Menu de Contexto ─────────────────────────────────────────────────────────
+Write-Host "▶ Registrando menu de contexto (clique-direito)..." -ForegroundColor Cyan
+$InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$regScript = Join-Path $InstallDir "context_menu\register_windows.ps1"
+if (Test-Path $regScript) {
+    try {
+        & powershell -ExecutionPolicy Bypass -File $regScript -InstallDir $InstallDir
+    } catch {
+        Aviso "Nao foi possivel registrar o menu de contexto: $_"
+        Aviso "Execute manualmente: powershell -ExecutionPolicy Bypass -File context_menu\register_windows.ps1"
+    }
+} else {
+    Aviso "Script de registro nao encontrado: $regScript"
+}
+Write-Host ""
+
 # ─── Conclusão ────────────────────────────────────────────────────────────────
 Write-Host "╔══════════════════════════════════════════╗" -ForegroundColor Cyan
 Write-Host "║        Instalacao concluida!  OK         ║" -ForegroundColor Cyan
 Write-Host "╚══════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Execute o script com:" -ForegroundColor White
-Write-Host "    uv run isbn.py" -ForegroundColor Yellow
+Write-Host "  Execute normalmente:  uv run isbn.py" -ForegroundColor White
+Write-Host "  Via clique-direito:   botao direito em qualquer pasta no Explorer" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  IMPORTANTE: Se alguma ferramenta nao foi encontrada," -ForegroundColor Gray
 Write-Host "  reinicie o terminal e verifique o PATH." -ForegroundColor Gray

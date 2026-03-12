@@ -106,11 +106,41 @@ uv sync
 ok "Ambiente Python configurado."
 echo ""
 
+# ─── Menu de Contexto ────────────────────────────────────────────────────────
+echo "▶ Registrando menu de contexto (clique-direito)..."
+INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Substituir placeholder nos scripts
+sed -i "s|INSTALL_DIR_PLACEHOLDER|$INSTALL_DIR|g" "$INSTALL_DIR/context_menu/nautilus_script" 2>/dev/null || true
+sed -i "s|INSTALL_DIR_PLACEHOLDER|$INSTALL_DIR|g" "$INSTALL_DIR/context_menu/isbn-renamer.desktop" 2>/dev/null || true
+
+if [[ "$PLATAFORMA" == "macos" ]]; then
+    bash "$INSTALL_DIR/context_menu/create_macos_quickaction.sh"
+    ok "Quick Action macOS registrado."
+else
+    # Detectar gerenciador de arquivos
+    if pgrep -x nautilus &>/dev/null || command -v nautilus &>/dev/null; then
+        SCRIPT_DIR="$HOME/.local/share/nautilus/scripts"
+        mkdir -p "$SCRIPT_DIR"
+        cp "$INSTALL_DIR/context_menu/nautilus_script" "$SCRIPT_DIR/Renomear com ISBN"
+        chmod +x "$SCRIPT_DIR/Renomear com ISBN"
+        ok "Script Nautilus (GNOME) instalado."
+    fi
+    if pgrep -x dolphin &>/dev/null || command -v dolphin &>/dev/null; then
+        SERVICES_DIR="$HOME/.local/share/kservices5/ServiceMenus"
+        mkdir -p "$SERVICES_DIR"
+        cp "$INSTALL_DIR/context_menu/isbn-renamer.desktop" "$SERVICES_DIR/isbn-renamer.desktop"
+        ok "Service Menu KDE (Dolphin) instalado."
+    fi
+    aviso "Reinicie o gerenciador de arquivos para ver o menu de contexto."
+fi
+echo ""
+
 # ─── Conclusão ────────────────────────────────────────────────────────────────
 echo "╔══════════════════════════════════════════╗"
 echo "║         Instalação concluída! ✔          ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
-echo "  Execute o script com:"
-echo "    uv run isbn.py"
+echo "  Execute normalmente:       uv run isbn.py"
+echo "  Via clique-direito:        botão direito em qualquer pasta"
 echo ""

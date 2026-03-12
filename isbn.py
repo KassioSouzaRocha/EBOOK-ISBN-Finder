@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 import re
@@ -100,8 +101,29 @@ POPPLER_PATH = configurar_plataforma()
 
 # --- EXTRAÇÃO DE ISBN ---
 
-def selecionar_pasta() -> str:
-    """Abre diálogo gráfico para seleção da pasta com os livros."""
+def obter_pasta() -> str:
+    """Retorna a pasta a processar.
+
+    Prioridade:
+      1. Argumento ``--pasta`` (passado pelo menu de contexto do SO).
+      2. Diálogo gráfico Tkinter (uso interativo normal).
+    """
+    ap = argparse.ArgumentParser(
+        description="ISBN Renamer — renomeia livros usando metadados do ISBN.",
+        add_help=False,
+    )
+    ap.add_argument(
+        "--pasta",
+        metavar="DIR",
+        default=None,
+        help="Pasta com os livros a processar (opcional; abre diálogo se omitido).",
+    )
+    args, _ = ap.parse_known_args()
+
+    if args.pasta:
+        return args.pasta
+
+    # Fallback: diálogo gráfico
     root = Tk()
     root.withdraw()
     root.attributes("-topmost", True)
@@ -269,7 +291,7 @@ def solicitar_isbn_manual(motivo: str) -> str | None:
 
 def iniciar():
     """Processa todos os livros da pasta selecionada."""
-    pasta = selecionar_pasta()
+    pasta = obter_pasta()
     if not pasta:
         logger.warning("Nenhuma pasta selecionada. Encerrando.")
         return
