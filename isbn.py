@@ -1,7 +1,9 @@
 import logging
 import os
 import re
+import shutil
 import subprocess
+import sys
 import time
 import warnings
 
@@ -21,6 +23,79 @@ logging.basicConfig(
     format="%(levelname)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+# --- CONFIGURAÇÃO DE PLATAFORMA ---
+
+def _detectar_poppler_windows() -> str | None:
+    """Tenta localizar o Poppler em caminhos típicos do Windows."""
+    candidatos = [
+        r"C:\\Program Files\\poppler\\Library\\bin",
+        r"C:\\poppler\\Library\\bin",
+        r"C:\\poppler\\bin",
+    ]
+    # Busca também qualquer pasta 'poppler-*' em Program Files
+    for raiz in (r"C:\\Program Files", r"C:\\Program Files (x86)", r"C:\\"):
+        try:
+            for item in os.listdir(raiz):
+                if item.lower().startswith("poppler"):
+                    candidatos.insert(0, os.path.join(raiz, item, "Library", "bin"))
+                    candidatos.insert(0, os.path.join(raiz, item, "bin"))
+        except OSError:
+            pass
+    for caminho in candidatos:
+        if os.path.isfile(os.path.join(caminho, "pdftoppm.exe")):
+            return caminho
+    return None
+
+
+def configurar_plataforma() -> str | None:
+    """Configura ferramentas externas conforme o sistema operacional.
+
+    Returns:
+        Caminho do Poppler (Windows) ou None (Linux/macOS, usa PATH).
+    """
+    poppler_path = None
+
+    if sys.platform == "win32":
+        # --- Tesseract ---
+        tesseract_exe = shutil.which("tesseract")
+        if not tesseract_exe:
+            caminho_padrao = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+            if os.path.isfile(caminho_padrao):
+                tesseract_exe = caminho_padrao
+        if tesseract_exe:
+            pytesseract.pytesseract.tesseract_cmd = tesseract_exe
+            logger.info("Tesseract: %s", tesseract_exe)
+        else:
+            logger.warning(
+                "Tesseract não encontrado. Instale em https://github.com/UB-Mannheim/tesseract/wiki "
+                "e adicione ao PATH (ou instale em C:\\Program Files\\Tesseract-OCR)."
+            )
+
+        # --- Poppler ---
+        if shutil.which("pdftoppm"):
+            logger.info("Poppler: encontrado no PATH")
+        else:
+            poppler_path = _detectar_poppler_windows()
+            if poppler_path:
+                logger.info("Poppler: %s", poppler_path)
+            else:
+                logger.warning(
+                    "Poppler não encontrado. Baixe em https://github.com/oschwartz10612/poppler-windows/releases "
+                    "e extraia em C:\\Program Files\\poppler (ou adicione ao PATH)."
+                )
+
+        # --- ExifTool ---
+        if not shutil.which("exiftool"):
+            logger.warning(
+                "ExifTool não encontrado. Baixe em https://exiftool.org e adicione ao PATH."
+            )
+
+    return poppler_path
+
+
+POPPLER_PATH = configurar_plataforma()
 
 
 # --- EXTRAÇÃO DE ISBN ---
@@ -61,7 +136,13 @@ def realizar_ocr_hd(caminho_pdf: str) -> str:
     """Realiza OCR em alta definição (600 DPI) nas primeiras 10 páginas do PDF."""
     logger.info("[OCR HD] Analisando 10 páginas em 600 DPI...")
     try:
-        paginas = convert_from_path(caminho_pdf, first_page=1, last_page=10, dpi=600)
+        paginas = convert_from_path(
+            caminho_pdf,
+            first_page=1,
+            last_page=10,
+            dpi=600,
+            poppler_path=POPPLER_PATH,  # None no Linux/macOS (usa PATH)
+        )
         texto_total = ""
         for pg in paginas:
             pg_otimizada = processar_imagem_ocr(pg)

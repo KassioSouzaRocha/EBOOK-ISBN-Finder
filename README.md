@@ -4,7 +4,7 @@ Ferramenta CLI para processar bibliotecas de livros digitais (PDF, EPUB, MOBI): 
 
 ## Dependências do sistema
 
-Antes de instalar, certifique-se de ter estes programas instalados:
+### Linux / macOS
 
 ```bash
 # Ubuntu/Debian
@@ -13,6 +13,18 @@ sudo apt install tesseract-ocr poppler-utils exiftool
 # macOS
 brew install tesseract poppler exiftool
 ```
+
+### Windows
+
+Instale as três ferramentas abaixo e adicione-as ao **PATH** (ou deixe nos caminhos padrão — o script detecta automaticamente):
+
+| Ferramenta | Download | Caminho padrão detectado |
+|---|---|---|
+| **Tesseract OCR** | [UB-Mannheim/tesseract](https://github.com/UB-Mannheim/tesseract/wiki) | `C:\Program Files\Tesseract-OCR\tesseract.exe` |
+| **Poppler** | [oschwartz10612/poppler-windows](https://github.com/oschwartz10612/poppler-windows/releases) | `C:\Program Files\poppler\Library\bin` |
+| **ExifTool** | [exiftool.org](https://exiftool.org) | Adicionar ao PATH |
+
+> O script exibe avisos no terminal caso alguma ferramenta não seja encontrada.
 
 ## Instalação
 
