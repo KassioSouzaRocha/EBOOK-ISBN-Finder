@@ -26,7 +26,28 @@ Instale as três ferramentas abaixo e adicione-as ao **PATH** (ou deixe nos cami
 
 > O script exibe avisos no terminal caso alguma ferramenta não seja encontrada.
 
-## Instalação
+
+## Instalação rápida
+
+### Linux / macOS
+
+```bash
+bash install.sh
+```
+
+### Windows
+
+Execute no **PowerShell como Administrador**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+> Ambos os scripts instalam as dependências do sistema, fazem o download do Poppler se necessário, instalam o `uv` e executam `uv sync` automaticamente.
+
+---
+
+### Instalação manual
 
 ```bash
 # Clone o repositório
@@ -36,6 +57,7 @@ cd isbn-renamer
 # Crie o ambiente e instale as dependências com uv
 uv sync
 ```
+
 
 ## Uso
 
