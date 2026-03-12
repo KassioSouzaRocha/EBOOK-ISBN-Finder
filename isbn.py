@@ -227,7 +227,7 @@ def realizar_ocr_hd(caminho_pdf: str) -> str:
 # --- BUSCA DE METADADOS ---
 
 def obter_metadados_completos(isbn: str) -> dict | None:
-    """Busca resiliente de metadados em múltiplas fontes (Google Books, Open Library, CBL)."""
+    """Busca resiliente de metadados em múltiplas fontes (CBL, Google Books, Open Library)."""
     isbn_limpo = re.sub(r"[^0-9X]", "", isbn.upper())
     isbn_original = isbn.strip()  # mantém hífens/formatação original
     # Variantes: primeiro sem hífens, depois com formatação original
@@ -236,7 +236,25 @@ def obter_metadados_completos(isbn: str) -> dict | None:
         variantes.append(isbn_original)
     logger.info("   Pesquisando metadados para: %s", isbn)
 
-    # 1. Google Books (API JSON — fonte mais confiável)
+    # 1. CBL (scraping — prioridade para livros brasileiros)
+    placeholders = {"O Conto", "O Subtitle", ""}
+    for variante in variantes:
+        try:
+            url = f"https://www.cblservicos.org.br/isbn/pesquisa/?page=1&filtro=isbn&q={variante}"
+            resposta = requests.get(url, timeout=15)
+            resposta.raise_for_status()
+            soup = BeautifulSoup(resposta.text, "html.parser")
+            titulo_tag = soup.find("h4")
+            if titulo_tag:
+                titulo = titulo_tag.get_text(strip=True)
+                if titulo not in placeholders:
+                    return {"titulo": titulo, "autor": "S/A", "editora": "S/E"}
+        except requests.RequestException as e:
+            logger.debug("CBL indisponível (%s): %s", variante, e)
+        except Exception as e:
+            logger.warning("Erro inesperado ao consultar CBL: %s", e)
+
+    # 2. Google Books (API JSON — boa cobertura geral)
     for variante in variantes:
         try:
             url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{variante}"
@@ -255,7 +273,7 @@ def obter_metadados_completos(isbn: str) -> dict | None:
         except Exception as e:
             logger.warning("Erro inesperado ao consultar Google Books: %s", e)
 
-    # 2. Open Library (API JSON — boa cobertura internacional)
+    # 3. Open Library (API JSON — cobertura internacional)
     for variante in variantes:
         try:
             url = f"https://openlibrary.org/isbn/{variante}.json"
@@ -297,24 +315,6 @@ def obter_metadados_completos(isbn: str) -> dict | None:
             logger.debug("Open Library indisponível (%s): %s", variante, e)
         except Exception as e:
             logger.warning("Erro inesperado ao consultar Open Library: %s", e)
-
-    # 3. CBL (scraping — resultados carregados via JS, geralmente não funciona)
-    placeholders = {"O Conto", "O Subtitle", ""}
-    for variante in variantes:
-        try:
-            url = f"https://www.cblservicos.org.br/isbn/pesquisa/?page=1&filtro=isbn&q={variante}"
-            resposta = requests.get(url, timeout=15)
-            resposta.raise_for_status()
-            soup = BeautifulSoup(resposta.text, "html.parser")
-            titulo_tag = soup.find("h4")
-            if titulo_tag:
-                titulo = titulo_tag.get_text(strip=True)
-                if titulo not in placeholders:
-                    return {"titulo": titulo, "autor": "S/A", "editora": "S/E"}
-        except requests.RequestException as e:
-            logger.debug("CBL indisponível (%s): %s", variante, e)
-        except Exception as e:
-            logger.warning("Erro inesperado ao consultar CBL: %s", e)
 
     return None
 
