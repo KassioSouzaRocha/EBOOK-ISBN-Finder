@@ -26,7 +26,6 @@ Instale as três ferramentas abaixo e adicione-as ao **PATH** (ou deixe nos cami
 
 > O script exibe avisos no terminal caso alguma ferramenta não seja encontrada.
 
-
 ## Instalação rápida
 
 ### Linux / macOS
@@ -50,29 +49,48 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 ### Instalação manual
 
 ```bash
-# Clone o repositório
 git clone <url-do-repo>
 cd isbn-renamer
-
-# Crie o ambiente e instale as dependências com uv
 uv sync
 ```
 
-
 ## Uso
 
+### Via terminal
+
 ```bash
+# Abrir diálogo gráfico para escolher arquivo ou pasta
 uv run isbn.py
+
+# Processar um único arquivo
+uv run isbn.py --arquivo "Livro.pdf"
+
+# Processar todos os livros de uma pasta
+uv run isbn.py --pasta ~/Livros/
 ```
 
-Uma janela de seleção de pasta será aberta. Escolha a pasta com seus livros. O script irá:
+### Argumentos CLI
 
-1. Encontrar todos os arquivos `.pdf`, `.epub` e `.mobi`
-2. Extrair o ISBN via texto ou OCR (600 DPI para PDFs)
-3. Buscar metadados na **CBL** (Câmara Brasileira do Livro) e **Google Books**
-4. Gravar os metadados no arquivo e renomear para `Título - Autor.ext`
+| Argumento | Descrição |
+|---|---|
+| `--arquivo FILE` | Processa um único arquivo (PDF, EPUB ou MOBI) |
+| `--pasta DIR` | Processa todos os livros da pasta indicada |
+| _(sem argumento)_ | Abre diálogo gráfico com opção de escolher arquivo ou pasta |
 
-## Fluxo de extração
+### Via menu de contexto (clique-direito)
+
+Após a instalação, o menu de contexto aparece ao clicar com o botão direito em arquivos ou pastas no gerenciador de arquivos:
+
+| Desktop | Onde aparece | Opções |
+|---|---|---|
+| **GNOME (Nautilus)** | Scripts → | **"Somente esse item — Renomear com ISBN"** · **"Renomear com ISBN"** |
+| **KDE (Dolphin)** | Renomear com ISBN → | **"Somente esse item"** · **"Pasta inteira"** |
+| **Windows Explorer** | Renomear com ISBN → | **"Somente esse item"** · **"Pasta inteira"** |
+| **macOS (Finder)** | Quick Action → | **"Renomear com ISBN"** |
+
+> **Dica:** após a instalação, reinicie o gerenciador de arquivos (`nautilus -q` no GNOME) para que as novas entradas apareçam.
+
+## Pipeline de extração
 
 ```
 Arquivo PDF  →  pdfminer (texto)  →  ISBN encontrado?
@@ -82,6 +100,34 @@ Arquivo PDF  →  pdfminer (texto)  →  ISBN encontrado?
              "ISBN não localizado nas 10 páginas"
 
 Arquivo EPUB →  ebooklib + BeautifulSoup  →  ISBN encontrado?
+```
+
+Após a extração do ISBN:
+
+```
+ISBN → Busca na CBL (Câmara Brasileira do Livro) → encontrou?
+              ↓ não
+       Busca no Google Books API → encontrou?
+              ↓ não
+       "Metadados não encontrados"
+              ↓ sim
+       Grava metadados no arquivo (exiftool) → Renomeia para "Título - Autor.ext"
+```
+
+## Estrutura do projeto
+
+```
+ISBN/
+├── isbn.py                             # Script principal
+├── pyproject.toml                      # Dependências Python (uv/pip)
+├── install.sh                          # Instalador Linux/macOS
+├── install.ps1                         # Instalador Windows
+├── context_menu/
+│   ├── nautilus_script                 # Script Nautilus (GNOME)
+│   ├── isbn-renamer.desktop            # Service Menu KDE (Dolphin)
+│   ├── register_windows.ps1            # Registro do menu de contexto Windows
+│   └── create_macos_quickaction.sh     # Quick Action macOS (Finder)
+└── README.md
 ```
 
 ## Desenvolvimento
