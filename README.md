@@ -1,6 +1,6 @@
 # ISBN Renamer
 
-Ferramenta CLI para processar bibliotecas de livros digitais (PDF, EPUB, MOBI): extrai o ISBN de cada arquivo, busca título e autor nas APIs da CBL e Google Books, e renomeia os arquivos automaticamente no formato `Título - Autor.ext`.
+Ferramenta CLI para processar bibliotecas de livros digitais (PDF, EPUB, MOBI): extrai o ISBN de cada arquivo, busca título, autor e editora nas APIs da CBL (Azure Cognitive Search), Google Books e Open Library, e renomeia os arquivos automaticamente no formato `Título - Autor.ext`.
 
 ## Dependências do sistema
 
@@ -105,9 +105,11 @@ Arquivo EPUB →  ebooklib + BeautifulSoup  →  ISBN encontrado?
 Após a extração do ISBN:
 
 ```
-ISBN → Busca na CBL (Câmara Brasileira do Livro) → encontrou?
+ISBN → CBL API (Azure Cognitive Search) → título + autor + editora?
               ↓ não
-       Busca no Google Books API → encontrou?
+       Google Books API → encontrou?
+              ↓ não
+       Open Library API → encontrou?
               ↓ não
        "Metadados não encontrados"
               ↓ sim

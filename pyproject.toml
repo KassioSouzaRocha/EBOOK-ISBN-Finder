@@ -1,7 +1,7 @@
 [project]
 name = "isbn-renamer"
-version = "0.1.0"
-description = "Renomeia livros PDF/EPUB extraindo ISBN e buscando metadados via CBL e Google Books"
+version = "0.2.0"
+description = "Renomeia livros PDF/EPUB extraindo ISBN e buscando metadados via CBL API, Google Books e Open Library"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
