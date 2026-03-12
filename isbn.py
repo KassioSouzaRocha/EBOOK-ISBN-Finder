@@ -162,15 +162,36 @@ def obter_alvo() -> tuple[str, str]:
         return ("pasta", caminho) if caminho else ("pasta", "")
 
 
+# Controle global de formato ISBN
+FORMATO_ISBN: str = "limpo"  # "limpo" (só dígitos) ou "formatado" (com hífens)
+
+
+def formatar_isbn(isbn_bruto: str) -> str:
+    """Aplica o formato configurado ao ISBN.
+
+    Se FORMATO_ISBN == 'formatado', preserva hífens do original.
+    Caso contrário, retorna somente dígitos.
+    """
+    limpo = re.sub(r"[^0-9X]", "", isbn_bruto.upper())
+    if FORMATO_ISBN == "formatado":
+        # Tenta formatar ISBN-13: 978-XX-XXXX-XXX-X
+        if len(limpo) == 13:
+            return f"{limpo[:3]}-{limpo[3:5]}-{limpo[5:9]}-{limpo[9:12]}-{limpo[12]}"
+        # ISBN-10: X-XXXX-XXXX-X
+        elif len(limpo) == 10:
+            return f"{limpo[0]}-{limpo[1:5]}-{limpo[5:9]}-{limpo[9]}"
+    return limpo
+
+
 def extrair_isbn_do_texto(texto: str) -> str | None:
-    """Localiza o ISBN no texto e retorna somente dígitos (sem espaços/hífens)."""
+    """Localiza o ISBN no texto e retorna no formato configurado."""
     if not texto:
         return None
     padrao = r"(?i)ISBN(?:-1[03])?:?\s*((?:97[89][\s\-]?)?(?:\d[\s\-]?){9}[\dX])"
     match = re.search(padrao, texto)
     if match:
         isbn_bruto = match.group(1).strip()
-        return re.sub(r"[^0-9X]", "", isbn_bruto.upper())
+        return formatar_isbn(isbn_bruto)
     return None
 
 
@@ -421,8 +442,33 @@ def _processar_arquivo(caminho: str) -> None:
                 logger.warning("   ISBN manual '%s' sem resultados nas APIs. Pulando.", isbn_manual)
 
 
+def _escolher_formato_isbn() -> None:
+    """Menu interativo para o usuário escolher o formato do ISBN."""
+    global FORMATO_ISBN
+    print("\n" + "=" * 50)
+    print("   📖  ISBN RENAMER — Formato do ISBN")
+    print("=" * 50)
+    print("\n  Escolha o formato de exibição do ISBN:\n")
+    print("   [1] Limpo (só dígitos)     → 9788535914849")
+    print("   [2] Formatado (com hífens) → 978-85-359-1484-9")
+    print()
+    while True:
+        escolha = input("  Opção (1 ou 2) [padrão: 1]: ").strip()
+        if escolha in ("", "1"):
+            FORMATO_ISBN = "limpo"
+            print("\n  ✅ Formato: ISBN limpo (só dígitos)\n")
+            break
+        elif escolha == "2":
+            FORMATO_ISBN = "formatado"
+            print("\n  ✅ Formato: ISBN formatado (com hífens)\n")
+            break
+        else:
+            print("  ❌ Opção inválida. Digite 1 ou 2.")
+
+
 def iniciar():
     """Ponto de entrada: processa arquivo único ou todos os livros da pasta."""
+    _escolher_formato_isbn()
     modo, alvo = obter_alvo()
 
     if not alvo:
