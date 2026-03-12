@@ -208,69 +208,92 @@ def realizar_ocr_hd(caminho_pdf: str) -> str:
 def obter_metadados_completos(isbn: str) -> dict | None:
     """Busca resiliente de metadados em múltiplas fontes (Google Books, Open Library, CBL)."""
     isbn_limpo = re.sub(r"[^0-9X]", "", isbn.upper())
+    isbn_original = isbn.strip()  # mantém hífens/formatação original
+    # Variantes: primeiro sem hífens, depois com formatação original
+    variantes = [isbn_limpo]
+    if isbn_original != isbn_limpo:
+        variantes.append(isbn_original)
     logger.info("   Pesquisando metadados para: %s", isbn)
 
     # 1. Google Books (API JSON — fonte mais confiável)
-    try:
-        url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn_limpo}"
-        resposta = requests.get(url, timeout=10)
-        resposta.raise_for_status()
-        dados_json = resposta.json()
-        if "items" in dados_json:
-            info = dados_json["items"][0]["volumeInfo"]
-            return {
-                "titulo": info.get("title", "S/T"),
-                "autor": ", ".join(info.get("authors", ["S/A"])),
-                "editora": info.get("publisher", "S/E"),
-            }
-    except requests.RequestException as e:
-        logger.debug("Google Books indisponível: %s", e)
-    except Exception as e:
-        logger.warning("Erro inesperado ao consultar Google Books: %s", e)
+    for variante in variantes:
+        try:
+            url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{variante}"
+            resposta = requests.get(url, timeout=10)
+            resposta.raise_for_status()
+            dados_json = resposta.json()
+            if "items" in dados_json:
+                info = dados_json["items"][0]["volumeInfo"]
+                return {
+                    "titulo": info.get("title", "S/T"),
+                    "autor": ", ".join(info.get("authors", ["S/A"])),
+                    "editora": info.get("publisher", "S/E"),
+                }
+        except requests.RequestException as e:
+            logger.debug("Google Books indisponível (%s): %s", variante, e)
+        except Exception as e:
+            logger.warning("Erro inesperado ao consultar Google Books: %s", e)
 
     # 2. Open Library (API JSON — boa cobertura internacional)
-    try:
-        url = f"https://openlibrary.org/isbn/{isbn_limpo}.json"
-        resposta = requests.get(url, timeout=10)
-        if resposta.status_code == 200:
-            dados = resposta.json()
-            titulo = dados.get("title", "S/T")
-            editora = "S/E"
-            if dados.get("publishers"):
-                editora = dados["publishers"][0]
-            autor = "S/A"
-            if dados.get("authors"):
-                try:
-                    autor_key = dados["authors"][0].get("key", "")
-                    if autor_key:
-                        r = requests.get(f"https://openlibrary.org{autor_key}.json", timeout=5)
-                        if r.status_code == 200:
-                            autor = r.json().get("name", "S/A")
-                except Exception:
-                    pass
-            return {"titulo": titulo, "autor": autor, "editora": editora}
-    except requests.RequestException as e:
-        logger.debug("Open Library indisponível: %s", e)
-    except Exception as e:
-        logger.warning("Erro inesperado ao consultar Open Library: %s", e)
+    for variante in variantes:
+        try:
+            url = f"https://openlibrary.org/isbn/{variante}.json"
+            resposta = requests.get(url, timeout=10)
+            if resposta.status_code == 200:
+                dados = resposta.json()
+                titulo = dados.get("title", "S/T")
+                editora = "S/E"
+                if dados.get("publishers"):
+                    editora = dados["publishers"][0]
+                autor = "S/A"
+                # Tenta autor direto na edição
+                if dados.get("authors"):
+                    try:
+                        autor_key = dados["authors"][0].get("key", "")
+                        if autor_key:
+                            r = requests.get(f"https://openlibrary.org{autor_key}.json", timeout=5)
+                            if r.status_code == 200:
+                                autor = r.json().get("name", "S/A")
+                    except Exception:
+                        pass
+                # Fallback: busca autor via /works/ (edições BR geralmente não têm authors direto)
+                if autor == "S/A" and dados.get("works"):
+                    try:
+                        work_key = dados["works"][0]["key"]
+                        rw = requests.get(f"https://openlibrary.org{work_key}.json", timeout=5)
+                        if rw.status_code == 200:
+                            work_data = rw.json()
+                            if work_data.get("authors"):
+                                autor_key = work_data["authors"][0].get("author", {}).get("key", "")
+                                if autor_key:
+                                    ra = requests.get(f"https://openlibrary.org{autor_key}.json", timeout=5)
+                                    if ra.status_code == 200:
+                                        autor = ra.json().get("name", "S/A")
+                    except Exception:
+                        pass
+                return {"titulo": titulo, "autor": autor, "editora": editora}
+        except requests.RequestException as e:
+            logger.debug("Open Library indisponível (%s): %s", variante, e)
+        except Exception as e:
+            logger.warning("Erro inesperado ao consultar Open Library: %s", e)
 
-    # 3. CBL (scraping — resultados carregados via JS, pode não funcionar)
-    try:
-        url = f"https://www.cblservicos.org.br/isbn/pesquisa/?page=1&filtro=isbn&q={isbn_limpo}"
-        resposta = requests.get(url, timeout=15)
-        resposta.raise_for_status()
-        soup = BeautifulSoup(resposta.text, "html.parser")
-        # Tenta h4 (título) dentro do bloco de resultados
-        titulo_tag = soup.find("h4")
-        if titulo_tag:
-            titulo = titulo_tag.get_text(strip=True)
-            # Evita o template placeholder "O Conto"
-            if titulo and titulo != "O Conto":
-                return {"titulo": titulo, "autor": "S/A", "editora": "S/E"}
-    except requests.RequestException as e:
-        logger.debug("CBL indisponível: %s", e)
-    except Exception as e:
-        logger.warning("Erro inesperado ao consultar CBL: %s", e)
+    # 3. CBL (scraping — resultados carregados via JS, geralmente não funciona)
+    placeholders = {"O Conto", "O Subtitle", ""}
+    for variante in variantes:
+        try:
+            url = f"https://www.cblservicos.org.br/isbn/pesquisa/?page=1&filtro=isbn&q={variante}"
+            resposta = requests.get(url, timeout=15)
+            resposta.raise_for_status()
+            soup = BeautifulSoup(resposta.text, "html.parser")
+            titulo_tag = soup.find("h4")
+            if titulo_tag:
+                titulo = titulo_tag.get_text(strip=True)
+                if titulo not in placeholders:
+                    return {"titulo": titulo, "autor": "S/A", "editora": "S/E"}
+        except requests.RequestException as e:
+            logger.debug("CBL indisponível (%s): %s", variante, e)
+        except Exception as e:
+            logger.warning("Erro inesperado ao consultar CBL: %s", e)
 
     return None
 
