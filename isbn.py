@@ -101,16 +101,27 @@ POPPLER_PATH = configurar_plataforma()
 
 # --- EXTRAÇÃO DE ISBN ---
 
-def obter_pasta() -> str:
-    """Retorna a pasta a processar.
+def obter_alvo() -> tuple[str, str]:
+    """Retorna (modo, caminho) indicando o que processar.
+
+    Modos possíveis:
+      - ``'arquivo'``: processa um único arquivo (``--arquivo``).
+      - ``'pasta'``:   processa todos os livros da pasta (``--pasta`` ou diálogo).
 
     Prioridade:
-      1. Argumento ``--pasta`` (passado pelo menu de contexto do SO).
-      2. Diálogo gráfico Tkinter (uso interativo normal).
+      1. ``--arquivo CAMINHO``  — passado pelo menu de contexto ao selecionar arquivo.
+      2. ``--pasta DIR``        — passado pelo menu de contexto ao selecionar pasta.
+      3. Diálogo gráfico Tkinter com opção de escolher arquivo ou pasta.
     """
     ap = argparse.ArgumentParser(
         description="ISBN Renamer — renomeia livros usando metadados do ISBN.",
         add_help=False,
+    )
+    ap.add_argument(
+        "--arquivo",
+        metavar="FILE",
+        default=None,
+        help="Arquivo único a processar (pdf, epub ou mobi).",
     )
     ap.add_argument(
         "--pasta",
@@ -120,16 +131,35 @@ def obter_pasta() -> str:
     )
     args, _ = ap.parse_known_args()
 
+    if args.arquivo:
+        return ("arquivo", args.arquivo)
     if args.pasta:
-        return args.pasta
+        return ("pasta", args.pasta)
 
-    # Fallback: diálogo gráfico
+    # Fallback: diálogo gráfico — pergunta ao usuário se quer arquivo ou pasta
     root = Tk()
     root.withdraw()
     root.attributes("-topmost", True)
-    pasta = filedialog.askdirectory(title="Selecione a pasta dos livros")
-    root.destroy()
-    return pasta
+
+    from tkinter import messagebox
+    escolha = messagebox.askyesno(
+        "ISBN Renamer",
+        "Deseja selecionar um arquivo específico?\n\n"
+        "  Sim  → seleciona um arquivo\n"
+        "  Não  → seleciona uma pasta inteira",
+    )
+    if escolha:
+        formatos = [("Livros", "*.pdf *.epub *.mobi"), ("Todos", "*.*")]
+        caminho = filedialog.askopenfilename(
+            title="Selecione o arquivo do livro",
+            filetypes=formatos,
+        )
+        root.destroy()
+        return ("arquivo", caminho) if caminho else ("pasta", "")
+    else:
+        caminho = filedialog.askdirectory(title="Selecione a pasta dos livros")
+        root.destroy()
+        return ("pasta", caminho) if caminho else ("pasta", "")
 
 
 def extrair_isbn_do_texto(texto: str, manter_formatacao: bool = True) -> str | None:
@@ -289,13 +319,83 @@ def solicitar_isbn_manual(motivo: str) -> str | None:
 
 # --- PONTO DE ENTRADA ---
 
-def iniciar():
-    """Processa todos os livros da pasta selecionada."""
-    pasta = obter_pasta()
-    if not pasta:
-        logger.warning("Nenhuma pasta selecionada. Encerrando.")
+def _processar_arquivo(caminho: str) -> None:
+    """Processa um único arquivo de livro: extrai ISBN, busca dados e renomeia."""
+    nome_arq = os.path.basename(caminho)
+    ext = os.path.splitext(nome_arq)[1].lower()
+    formatos = (".pdf", ".epub", ".mobi")
+
+    if ext not in formatos:
+        logger.warning("Formato não suportado: %s", ext)
         return
 
+    logger.info("\nProcessando: %s", nome_arq)
+    isbn = None
+
+    if ext == ".pdf":
+        try:
+            isbn = extrair_isbn_do_texto(extract_text(caminho, page_numbers=list(range(10))))
+        except Exception as e:
+            logger.debug("Extração de texto via pdfminer falhou: %s", e)
+        if not isbn:
+            isbn = extrair_isbn_do_texto(realizar_ocr_hd(caminho))
+
+    elif ext == ".epub":
+        try:
+            livro = epub.read_epub(caminho)
+            texto = ""
+            for item in list(livro.get_items_of_type(ITEM_DOCUMENT))[:10]:
+                texto += BeautifulSoup(item.get_content(), "lxml").get_text()
+            isbn = extrair_isbn_do_texto(texto)
+        except Exception as e:
+            logger.warning("Falha ao ler EPUB '%s': %s", nome_arq, e)
+
+    if isbn:
+        dados = obter_metadados_completos(isbn)
+        if dados:
+            novo = gravar_e_renomear(caminho, dados, ext)
+            logger.info("   Sucesso: %s", novo)
+        else:
+            logger.warning("   ISBN %s encontrado, mas sem dados nas APIs.", isbn)
+            isbn_manual = solicitar_isbn_manual(
+                f"ISBN '{isbn}' não retornou resultados nas APIs."
+            )
+            if isbn_manual:
+                dados = obter_metadados_completos(isbn_manual)
+                if dados:
+                    novo = gravar_e_renomear(caminho, dados, ext)
+                    logger.info("   Sucesso (manual): %s", novo)
+                else:
+                    logger.warning("   ISBN manual '%s' também sem resultados. Pulando.", isbn_manual)
+    else:
+        logger.warning("   ISBN não localizado nas 10 páginas.")
+        isbn_manual = solicitar_isbn_manual("ISBN não encontrado automaticamente.")
+        if isbn_manual:
+            dados = obter_metadados_completos(isbn_manual)
+            if dados:
+                novo = gravar_e_renomear(caminho, dados, ext)
+                logger.info("   Sucesso (manual): %s", novo)
+            else:
+                logger.warning("   ISBN manual '%s' sem resultados nas APIs. Pulando.", isbn_manual)
+
+
+def iniciar():
+    """Ponto de entrada: processa arquivo único ou todos os livros da pasta."""
+    modo, alvo = obter_alvo()
+
+    if not alvo:
+        logger.warning("Nenhum alvo selecionado. Encerrando.")
+        return
+
+    if modo == "arquivo":
+        if not os.path.isfile(alvo):
+            logger.error("Arquivo não encontrado: %s", alvo)
+            return
+        _processar_arquivo(alvo)
+        return
+
+    # modo == "pasta"
+    pasta = alvo
     formatos = (".pdf", ".epub", ".mobi")
     arquivos = sorted([f for f in os.listdir(pasta) if f.lower().endswith(formatos)])
 
@@ -307,57 +407,7 @@ def iniciar():
 
     for nome_arq in arquivos:
         caminho = os.path.join(pasta, nome_arq)
-        ext = os.path.splitext(nome_arq)[1].lower()
-        logger.info("\nProcessando: %s", nome_arq)
-
-        isbn = None
-
-        if ext == ".pdf":
-            try:
-                isbn = extrair_isbn_do_texto(extract_text(caminho, page_numbers=list(range(10))))
-            except Exception as e:
-                logger.debug("Extração de texto via pdfminer falhou: %s", e)
-            if not isbn:
-                isbn = extrair_isbn_do_texto(realizar_ocr_hd(caminho))
-
-        elif ext == ".epub":
-            try:
-                livro = epub.read_epub(caminho)
-                texto = ""
-                for item in list(livro.get_items_of_type(ITEM_DOCUMENT))[:10]:
-                    texto += BeautifulSoup(item.get_content(), "lxml").get_text()
-                isbn = extrair_isbn_do_texto(texto)
-            except Exception as e:
-                logger.warning("Falha ao ler EPUB '%s': %s", nome_arq, e)
-
-        if isbn:
-            dados = obter_metadados_completos(isbn)
-            if dados:
-                novo = gravar_e_renomear(caminho, dados, ext)
-                logger.info("   Sucesso: %s", novo)
-            else:
-                logger.warning("   ISBN %s encontrado, mas sem dados nas APIs.", isbn)
-                isbn_manual = solicitar_isbn_manual(
-                    f"ISBN '{isbn}' não retornou resultados nas APIs."
-                )
-                if isbn_manual:
-                    dados = obter_metadados_completos(isbn_manual)
-                    if dados:
-                        novo = gravar_e_renomear(caminho, dados, ext)
-                        logger.info("   Sucesso (manual): %s", novo)
-                    else:
-                        logger.warning("   ISBN manual '%s' também sem resultados. Pulando.", isbn_manual)
-        else:
-            logger.warning("   ISBN não localizado nas 10 páginas.")
-            isbn_manual = solicitar_isbn_manual("ISBN não encontrado automaticamente.")
-            if isbn_manual:
-                dados = obter_metadados_completos(isbn_manual)
-                if dados:
-                    novo = gravar_e_renomear(caminho, dados, ext)
-                    logger.info("   Sucesso (manual): %s", novo)
-                else:
-                    logger.warning("   ISBN manual '%s' sem resultados nas APIs. Pulando.", isbn_manual)
-
+        _processar_arquivo(caminho)
         time.sleep(1)
 
 

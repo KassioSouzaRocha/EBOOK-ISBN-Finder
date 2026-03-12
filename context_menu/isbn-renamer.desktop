@@ -1,12 +1,19 @@
 [Desktop Entry]
-Type=Service
-X-KDE-ServiceTypes=KonqPopupMenu/Plugin
-MimeType=inode/directory;
-Actions=renomear_isbn;
-X-KDE-Priority=TopLevel
-
-[Desktop Action renomear_isbn]
+Type=Application
 Name=Renomear com ISBN
-Name[pt_BR]=Renomear com ISBN
-Icon=accessories-text-editor
-Exec=bash -c 'cd "INSTALL_DIR_PLACEHOLDER" && konsole --noclose -e bash -c "uv run isbn.py --pasta \"%f\"; echo; read -p \"Pressione Enter para fechar...\"' %u
+Comment=Renomeia livros PDF/EPUB/MOBI usando metadados do ISBN
+Icon=document-edit
+NoDisplay=true
+Actions=SomenteEsseItem;Pasta;
+
+[Desktop Action SomenteEsseItem]
+Name=Somente esse item — Renomear com ISBN
+Exec=bash -c 'INSTALL="INSTALL_DIR_PLACEHOLDER"; if command -v gnome-terminal &>/dev/null; then gnome-terminal -- bash -c "cd \"$INSTALL\" && uv run isbn.py --arquivo \"%F\"; echo; echo Pressione Enter para fechar...; read"; elif command -v xterm &>/dev/null; then xterm -hold -e bash -c "cd \"$INSTALL\" && uv run isbn.py --arquivo \"%F\""; else cd "$INSTALL" && uv run isbn.py --arquivo "%F" &; fi'
+Icon=document-open
+MimeType=application/pdf;application/epub+zip;application/x-mobipocket-ebook;
+
+[Desktop Action Pasta]
+Name=Renomear pasta inteira com ISBN
+Exec=bash -c 'INSTALL="INSTALL_DIR_PLACEHOLDER"; if command -v gnome-terminal &>/dev/null; then gnome-terminal -- bash -c "cd \"$INSTALL\" && uv run isbn.py --pasta \"%F\"; echo; echo Pressione Enter para fechar...; read"; elif command -v xterm &>/dev/null; then xterm -hold -e bash -c "cd \"$INSTALL\" && uv run isbn.py --pasta \"%F\""; else cd "$INSTALL" && uv run isbn.py --pasta "%F" &; fi'
+Icon=folder
+MimeType=inode/directory;

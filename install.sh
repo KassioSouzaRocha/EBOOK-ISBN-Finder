@@ -122,9 +122,15 @@ else
     if pgrep -x nautilus &>/dev/null || command -v nautilus &>/dev/null; then
         SCRIPT_DIR="$HOME/.local/share/nautilus/scripts"
         mkdir -p "$SCRIPT_DIR"
+        # Copia com o nome que aparece no submenu Scripts do Nautilus
+        cp "$INSTALL_DIR/context_menu/nautilus_script" "$SCRIPT_DIR/Somente esse item — Renomear com ISBN"
+        chmod +x "$SCRIPT_DIR/Somente esse item — Renomear com ISBN"
+        # Mantém alias genérico para pasta inteira (também pode ser usado via script)
         cp "$INSTALL_DIR/context_menu/nautilus_script" "$SCRIPT_DIR/Renomear com ISBN"
         chmod +x "$SCRIPT_DIR/Renomear com ISBN"
-        ok "Script Nautilus (GNOME) instalado."
+        ok "Scripts Nautilus (GNOME) instalados."
+        info "  → Scripts → 'Somente esse item — Renomear com ISBN'"
+        info "  → Scripts → 'Renomear com ISBN'"
     fi
     if pgrep -x dolphin &>/dev/null || command -v dolphin &>/dev/null; then
         SERVICES_DIR="$HOME/.local/share/kservices5/ServiceMenus"
@@ -142,5 +148,7 @@ echo "║         Instalação concluída! ✔          ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 echo "  Execute normalmente:       uv run isbn.py"
-echo "  Via clique-direito:        botão direito em qualquer pasta"
+echo "  Via GNOME (Nautilus):      Scripts → 'Somente esse item — Renomear com ISBN'"
+echo "  Via GNOME (Nautilus):      Scripts → 'Renomear com ISBN' (pasta inteira)"
+echo "  Via KDE   (Dolphin):       Renomear com ISBN → Somente esse item"
 echo ""

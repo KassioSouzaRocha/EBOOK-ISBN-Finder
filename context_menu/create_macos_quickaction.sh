@@ -86,12 +86,18 @@ cat > "$DOCUMENT_WFLOW" <<WFLOW
         <dict>
           <key>COMMAND_STRING</key>
           <string>for f in "\$@"; do
-  [ -d "\$f" ] &amp;&amp; PASTA="\$f" || PASTA=\$(dirname "\$f")
+  if [ -f "\$f" ]; then
+    ARG="--arquivo"
+    ALVO="\$f"
+  elif [ -d "\$f" ]; then
+    ARG="--pasta"
+    ALVO="\$f"
+  fi
   break
 done
 cd "${ESCAPED_DIR}"
 # Abre Terminal com progresso
-osascript -e "tell application \\"Terminal\\" to do script \\"cd '${ESCAPED_DIR}' &amp;&amp; uv run isbn.py --pasta '\$PASTA'\\"" -e "tell application \\"Terminal\\" to activate"</string>
+osascript -e "tell application \\"Terminal\\" to do script \\"cd '${ESCAPED_DIR}' &amp;&amp; uv run isbn.py \$ARG '\$ALVO'\\"" -e "tell application \\"Terminal\\" to activate"</string>
           <key>CheckedForUserDefaultShell</key><true/>
           <key>inputMethod</key><integer>1</integer>
           <key>shell</key><string>/bin/bash</string>
