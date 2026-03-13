@@ -18,7 +18,7 @@ Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 
 # ─── Verificar winget ─────────────────────────────────────────────────────────
-Write-Host "▶ Verificando winget..." -ForegroundColor Cyan
+Write-Host "-- Verificando winget..." -ForegroundColor Cyan
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     Erro "winget nao encontrado. Atualize o Windows ou instale o App Installer pela Microsoft Store."
 }
@@ -48,7 +48,7 @@ function Instalar-Winget {
 }
 
 # ─── Dependências do sistema ──────────────────────────────────────────────────
-Write-Host "▶ Instalando dependencias do sistema..." -ForegroundColor Cyan
+Write-Host "-- Instalando dependencias do sistema..." -ForegroundColor Cyan
 
 # Tesseract OCR
 Instalar-Winget -Nome "Tesseract OCR" -Id "UB-Mannheim.TesseractOCR" -Comando "tesseract"
@@ -126,11 +126,11 @@ if (-not $popplerOk) {
 Write-Host ""
 
 # ─── Verificar ferramentas ────────────────────────────────────────────────────
-Write-Host "▶ Verificando ferramentas no PATH..." -ForegroundColor Cyan
+Write-Host "-- Verificando ferramentas no PATH..." -ForegroundColor Cyan
 foreach ($cmd in @("tesseract", "exiftool", "pdftoppm")) {
     $found = Get-Command $cmd -ErrorAction SilentlyContinue
     if ($found) {
-        Ok "${cmd} → $($found.Source)"
+        Ok "${cmd} -> $($found.Source)"
     }
     else {
         Aviso "${cmd} nao encontrado. Pode ser necessario reiniciar o terminal."
@@ -139,7 +139,7 @@ foreach ($cmd in @("tesseract", "exiftool", "pdftoppm")) {
 Write-Host ""
 
 # ─── Instalar uv ──────────────────────────────────────────────────────────────
-Write-Host "▶ Verificando uv..." -ForegroundColor Cyan
+Write-Host "-- Verificando uv..." -ForegroundColor Cyan
 if (Get-Command uv -ErrorAction SilentlyContinue) {
     Ok "uv ja instalado: $(uv --version)"
 }
@@ -166,7 +166,7 @@ else {
 Write-Host ""
 
 # ─── Instalar pacotes Python ──────────────────────────────────────────────────
-Write-Host "▶ Instalando pacotes Python com uv..." -ForegroundColor Cyan
+Write-Host "-- Instalando pacotes Python com uv..." -ForegroundColor Cyan
 if (Get-Command uv -ErrorAction SilentlyContinue) {
     & uv sync
     Ok "Ambiente Python configurado."
@@ -177,7 +177,7 @@ else {
 Write-Host ""
 
 # ─── Menu de Contexto ─────────────────────────────────────────────────────────
-Write-Host "▶ Registrando menu de contexto (clique-direito)..." -ForegroundColor Cyan
+Write-Host "-- Registrando menu de contexto (clique-direito)..." -ForegroundColor Cyan
 $InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $regScript = Join-Path $InstallDir "context_menu\register_windows.ps1"
 if (Test-Path $regScript) {

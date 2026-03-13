@@ -1,97 +1,102 @@
 # register_windows.ps1
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Registra "Renomear com ISBN" no menu de contexto do Windows Explorer
-# Suporta:
-#   - Clique-direito em ARQUIVO PDF/EPUB/MOBI → "Somente esse item" (--arquivo)
-#   - Clique-direito em PASTA  → processa todos os livros da pasta (--pasta)
-# Chamado automaticamente pelo install.ps1
-# ─────────────────────────────────────────────────────────────────────────────
+# --------------------------------─────────────────────────────────────────────
 
 param(
     [string]$InstallDir = (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 )
 
-# Localizar UV (Evitando ?. que não existe no PS 5.1)
-$uvCmd = Get-Command uv -ErrorAction SilentlyContinue
-if ($uvCmd) {
-    $uvPath = $uvCmd.Source
-} else {
-    $uvPath = Join-Path $env:USERPROFILE ".local\bin\uv.exe"
-    if (-not (Test-Path $uvPath)) { $uvPath = "uv" }
-}
+# 1. Caminhos Absolutos
+$uvPath = (Get-Command uv -ErrorAction SilentlyContinue).Source
+if (-not $uvPath) { $uvPath = Join-Path $env:USERPROFILE ".local\bin\uv.exe" }
+if (-not (Test-Path $uvPath)) { $uvPath = "uv.exe" }
+
+$isbnScript = Join-Path $InstallDir "isbn.py"
+$launcher   = Join-Path $InstallDir "context_menu\launcher.bat"
+
+Write-Host "--- Configurações ---"
+Write-Host "UV:       $uvPath"
+Write-Host "Script:   $isbnScript"
+Write-Host "Launcher: $launcher"
+
+# Escapar caminhos para o arquivo .reg (barras invertidas duplas)
+$uvR       = $uvPath.Replace("\", "\\")
+$scriptR   = $isbnScript.Replace("\", "\\")
+$launcherR = $launcher.Replace("\", "\\")
 
 # ── DEFINIÇÃO DOS COMANDOS ───────────────────────────────────────────────────
+# O comando para o registro deve ter aspas internas escapadas com \
+$cmdSomente = "`"$launcherR`" `"$uvR`" `"$scriptR`" --arquivo `"%1`"".Replace('"', '\"')
+$cmdPasta   = "`"$launcherR`" `"$uvR`" `"$scriptR`" --pasta `"%V`"".Replace('"', '\"')
+$cmdPai     = "`"$launcherR`" `"$uvR`" `"$scriptR`" --pasta `"%1\\..`"".Replace('"', '\"')
 
-# Caminho do script de execução
-$isbnScript = Join-Path $InstallDir "isbn.py"
+# ── GERAR ARQUIVO .REG ───────────────────────────────────────────────────────
+$regFile = Join-Path $env:TEMP "isbn_menu.reg"
+$header = "Windows Registry Editor Version 5.00`r`n"
+$content = $header
 
-# Comando para arquivo único
-# Explicação: cmd /c start powershell ... "Set-Location '$InstallDir'; & '$uvPath' run ..."
-# Usamos & para garantir que o caminho do UV com espaços seja tratado como comando.
-$cmdSomenteEsseItem = "cmd /c start /wait powershell -NoExit -ExecutionPolicy Bypass -Command " +
-               "`"Set-Location '$InstallDir'; & '$uvPath' run '$isbnScript' --arquivo '%1'`""
+# Limpeza
+$content += "[-HKEY_CURRENT_USER\Software\Classes\*\shell\RenomearISBN]`r`n"
+$content += "[-HKEY_CURRENT_USER\Software\Classes\Folder\shell\RenomearISBN]`r`n"
+$content += "[-HKEY_CURRENT_USER\Software\Classes\Directory\Background\shell\RenomearISBN]`r`n"
 
-# Comando para pasta (quando clica em diretório)
-$cmdPasta = "cmd /c start /wait powershell -NoExit -ExecutionPolicy Bypass -Command " +
-               "`"Set-Location '$InstallDir'; & '$uvPath' run '$isbnScript' --pasta '%V'`""
+# Registro de Pastas
+$content += @"
 
-# Comando para pasta (quando clica em arquivo, processa o diretório pai)
-$cmdPastaDoArquivo = "cmd /c start /wait powershell -NoExit -ExecutionPolicy Bypass -Command " +
-                     "`"Set-Location '$InstallDir'; `$parent = Split-Path -Parent '%1'; & '$uvPath' run '$isbnScript' --pasta `$parent`""
+[HKEY_CURRENT_USER\Software\Classes\Folder\shell\RenomearISBN]
+"MUIVerb"="Renomear pasta inteira com ISBN"
+"Icon"="imageres.dll,-5356"
 
-# ── REGISTRO NO WINDOWS ──────────────────────────────────────────────────────
+[HKEY_CURRENT_USER\Software\Classes\Folder\shell\RenomearISBN\command]
+@="$cmdPasta"
 
-# Extensões suportadas
+[HKEY_CURRENT_USER\Software\Classes\Directory\Background\shell\RenomearISBN]
+"MUIVerb"="Renomear pasta inteira com ISBN"
+"Icon"="imageres.dll,-5356"
+
+[HKEY_CURRENT_USER\Software\Classes\Directory\Background\shell\RenomearISBN\command]
+@="$cmdPasta"
+
+"@
+
+# Adicionar extensões específicas
 $extensoes = @(".pdf", ".epub", ".mobi")
+foreach ($ext in $extensoes) {
+    $baseKey = "HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\$ext\shell\RenomearISBN"
+    $content += @"
 
-try {
-    # 1. Registro para PASTAS (Fundo da pasta e item da pasta)
-    $chavesPasta = @(
-        "HKCU:\Software\Classes\Directory\shell\RenomearISBN",
-        "HKCU:\Software\Classes\Directory\Background\shell\RenomearISBN"
-    )
+[-$baseKey]
+[$baseKey]
+"MUIVerb"="Renomear com ISBN"
+"Icon"="imageres.dll,-5356"
+"SubCommands"=""
 
-    foreach ($chave in $chavesPasta) {
-        New-Item -Path $chave -Force | Out-Null
-        Set-ItemProperty -Path $chave -Name "(default)" -Value "Renomear pasta inteira com ISBN"
-        Set-ItemProperty -Path $chave -Name "Icon"      -Value "imageres.dll,-5356"
-        New-Item -Path "$chave\command" -Force | Out-Null
-        Set-ItemProperty -Path "$chave\command" -Name "(default)" -Value $cmdPasta
-    }
-    Write-Host "✅ Menu registrado para pastas e subpastas." -ForegroundColor Green
+[$baseKey\shell\SomenteItem]
+"MUIVerb"="Somente esse item"
+"Icon"="shell32.dll,-16769"
 
-    # 2. Registro para ARQUIVOS (Utilizando SystemFileAssociations para não quebrar o padrão)
-    foreach ($ext in $extensoes) {
-        # SystemFileAssociations permite adicionar menus sem mudar o ProgID/aplicativo padrão
-        $baseChave = "HKCU:\Software\Classes\SystemFileAssociations\$ext\shell\RenomearISBN"
-        
-        New-Item -Path $baseChave -Force | Out-Null
-        Set-ItemProperty -Path $baseChave -Name "(default)" -Value "Renomear com ISBN"
-        Set-ItemProperty -Path $baseChave -Name "Icon"      -Value "imageres.dll,-5356"
-        Set-ItemProperty -Path $baseChave -Name "SubCommands" -Value ""
+[$baseKey\shell\SomenteItem\command]
+@="$cmdSomente"
 
-        # Subação: "Somente esse item"
-        $somenteChave = "$baseChave\shell\SomenteEsseItem"
-        New-Item -Path $somenteChave -Force | Out-Null
-        Set-ItemProperty -Path $somenteChave -Name "(default)" -Value "Somente esse item"
-        Set-ItemProperty -Path $somenteChave -Name "Icon"      -Value "shell32.dll,-16769"
-        New-Item -Path "$somenteChave\command" -Force | Out-Null
-        Set-ItemProperty -Path "$somenteChave\command" -Name "(default)" -Value $cmdSomenteEsseItem
+[$baseKey\shell\PastaInteira]
+"MUIVerb"="Pasta inteira"
+"Icon"="imageres.dll,-5356"
 
-        # Subação: "Pasta inteira"
-        $pastaChave = "$baseChave\shell\PastaInteira"
-        New-Item -Path $pastaChave -Force | Out-Null
-        Set-ItemProperty -Path $pastaChave -Name "(default)" -Value "Pasta inteira (diretório do arquivo)"
-        Set-ItemProperty -Path $pastaChave -Name "Icon"      -Value "imageres.dll,-5356"
-        New-Item -Path "$pastaChave\command" -Force | Out-Null
-        Set-ItemProperty -Path "$pastaChave\command" -Name "(default)" -Value $cmdPastaDoArquivo
-
-        Write-Host "✅ Menu registrado com segurança para $ext." -ForegroundColor Green
-    }
-
-    Write-Host ""
-    Write-Host "Configuração do registro concluída com sucesso!" -ForegroundColor Cyan
-} catch {
-    Write-Error "Erro ao modificar o registro: $_"
-    exit 1
+[$baseKey\shell\PastaInteira\command]
+@="$cmdPai"
+"@
 }
+
+# Salvar como UTF-16 LE com BOM (requerido pelo REG.EXE em alguns sistemas)
+[System.IO.File]::WriteAllText($regFile, $content, [System.Text.Encoding]::Unicode)
+
+Write-Host "--- Importando registro ---"
+$process = Start-Process reg.exe -ArgumentList "import", "`"$regFile`"" -Wait -PassThru
+if ($process.ExitCode -eq 0) {
+    Write-Host "   [OK] Registro importado com sucesso!" -ForegroundColor Green
+} else {
+    Write-Host "   [ERRO] Falha ao importar registro (Erro: $($process.ExitCode))" -ForegroundColor Red
+}
+
+Remove-Item $regFile -ErrorAction SilentlyContinue
