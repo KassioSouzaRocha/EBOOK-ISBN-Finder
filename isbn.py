@@ -226,58 +226,95 @@ def realizar_ocr_hd(caminho_pdf: str) -> str:
 
 # --- BUSCA DE METADADOS ---
 
-def obter_metadados_completos(isbn: str) -> dict | None:
-    """Busca resiliente de metadados em múltiplas fontes (CBL, Google Books, Open Library)."""
-    isbn_limpo = re.sub(r"[^0-9X]", "", isbn.upper())
-    isbn_original = isbn.strip()  # mantém hífens/formatação original
-    # Variantes: primeiro sem hífens, depois com formatação original
-    variantes = [isbn_limpo]
-    if isbn_original != isbn_limpo:
-        variantes.append(isbn_original)
-    logger.info("   Pesquisando metadados para: %s", isbn)
+def obter_metadados_arquivo(caminho: str) -> dict:
+    """Extrai metadados existentes (título e autor) do arquivo."""
+    ext = os.path.splitext(caminho)[1].lower()
+    dados = {"titulo": "", "autor": ""}
+    
+    try:
+        if ext == ".epub":
+            livro = epub.read_epub(caminho)
+            dados["titulo"] = livro.get_metadata("DC", "title")[0][0] if livro.get_metadata("DC", "title") else ""
+            dados["autor"] = livro.get_metadata("DC", "creator")[0][0] if livro.get_metadata("DC", "creator") else ""
+        else:
+            # PDF e MOBI via exiftool
+            resultado = subprocess.run(
+                ["exiftool", "-s3", "-Title", "-Author", caminho],
+                capture_output=True, text=True
+            )
+            linhas = resultado.stdout.splitlines()
+            if len(linhas) >= 1: dados["titulo"] = linhas[0].strip()
+            if len(linhas) >= 2: dados["autor"] = linhas[1].strip()
+    except Exception:
+        pass
+    return dados
 
-    # 1. CBL — API Azure Cognitive Search (prioridade para livros brasileiros)
+
+def obter_metadados_completos(isbn: str, titulo_sugerido: str = "", autor_sugerido: str = "") -> dict | None:
+    """Busca resiliente de metadados em múltiplas fontes."""
+    isbn_limpo = re.sub(r"[^0-9X]", "", isbn.upper()) if isbn else ""
+    logger.info("   Pesquisando metadados para: %s %s", isbn if isbn else "", f"({titulo_sugerido})" if titulo_sugerido else "")
+
+    # Variantes de ISBN
+    variantes = [isbn_limpo] if isbn_limpo else []
+    
+    # 1. CBL — API Azure Cognitive Search
     cbl_url = "https://isbn-search-br.search.windows.net/indexes/isbn-index/docs/search?api-version=2021-04-30-Preview"
     cbl_headers = {
         "api-key": "100216A23C5AEE390338BBD19EA86D29",
         "Content-Type": "application/json",
     }
-    for variante in variantes:
+    
+    # Tenta primeiro por ISBN, depois por Título/Autor
+    buscas = []
+    if isbn_limpo:
+        buscas.append({"q": isbn_limpo, "fields": "RowKey,FormattedKey"})
+    if titulo_sugerido:
+        termos = f"{titulo_sugerido} {autor_sugerido}".strip()
+        buscas.append({"q": termos, "fields": "Title,AuthorsStr"})
+
+    for busca in buscas:
         try:
             body = {
-                "search": variante,
-                "searchFields": "RowKey,FormattedKey",
+                "search": busca["q"],
+                "searchFields": busca["fields"],
                 "top": 1,
-                "select": "Title,Subtitle,AuthorsStr,Imprint,RowKey,FormattedKey",
+                "select": "Title,Subtitle,AuthorsStr,Authors,Imprint,RowKey,FormattedKey",
             }
             resposta = requests.post(cbl_url, headers=cbl_headers, json=body, timeout=10)
             resposta.raise_for_status()
             dados = resposta.json()
             resultados = dados.get("value", [])
+            logger.debug("Raw CBL Response: %s", dados)
+
             if resultados:
                 item = resultados[0]
-                # Confirma que o ISBN retornado corresponde ao pesquisado
-                rk = item.get("RowKey", "").replace("-", "")
-                fk = item.get("FormattedKey", "").replace("-", "")
-                if isbn_limpo in (rk, fk):
-                    titulo = item.get("Title", "S/T")
-                    subtitulo = item.get("Subtitle")
-                    if subtitulo:
-                        titulo = f"{titulo} — {subtitulo}"
-                    return {
-                        "titulo": titulo,
-                        "autor": item.get("AuthorsStr", "S/A") or "S/A",
-                        "editora": item.get("Imprint", "S/E") or "S/E",
-                    }
-        except requests.RequestException as e:
-            logger.debug("CBL indisponível (%s): %s", variante, e)
-        except Exception as e:
-            logger.warning("Erro inesperado ao consultar CBL: %s", e)
+                titulo = item.get("Title", "S/T")
+                subtitulo = item.get("Subtitle")
+                if subtitulo:
+                    titulo = f"{titulo} -- {subtitulo}"
+                
+                # Prioridade: AuthorsStr > Authors (lista/string)
+                autor = item.get("AuthorsStr")
+                if not autor:
+                    authors_field = item.get("Authors")
+                    if isinstance(authors_field, list):
+                        autor = ", ".join(authors_field)
+                    elif isinstance(authors_field, str):
+                        autor = authors_field
 
-    # 2. Google Books (API JSON — boa cobertura geral)
-    for variante in variantes:
+                return {
+                    "titulo": titulo,
+                    "autor": (autor or "S/A").strip(),
+                    "editora": (item.get("Imprint") or item.get("Publisher") or "S/E").strip(),
+                }
+        except Exception as e:
+            logger.debug("Falha na busca CBL (%s): %s", busca["q"], e)
+
+    # 2. Google Books
+    if isbn_limpo:
         try:
-            url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{variante}"
+            url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn_limpo}"
             resposta = requests.get(url, timeout=10)
             resposta.raise_for_status()
             dados_json = resposta.json()
@@ -288,10 +325,8 @@ def obter_metadados_completos(isbn: str) -> dict | None:
                     "autor": ", ".join(info.get("authors", ["S/A"])),
                     "editora": info.get("publisher", "S/E"),
                 }
-        except requests.RequestException as e:
-            logger.debug("Google Books indisponível (%s): %s", variante, e)
         except Exception as e:
-            logger.warning("Erro inesperado ao consultar Google Books: %s", e)
+            logger.debug("Google Books indisponível: %s", e)
 
     # 3. Open Library (API JSON — cobertura internacional)
     for variante in variantes:
@@ -391,7 +426,7 @@ def solicitar_isbn_manual(motivo: str) -> str | None:
     Returns:
         O ISBN digitado (com hífens/espaços preservados) ou None se pulado.
     """
-    print(f"\n  ⚠️  {motivo}")
+    print(f"\n  [AVISO] {motivo}")
     print("  Digite o ISBN correto (ou pressione Enter para pular): ", end="", flush=True)
     resposta = input().strip()
     if not resposta:
@@ -414,6 +449,9 @@ def _processar_arquivo(caminho: str) -> None:
 
     logger.info("\nProcessando: %s", nome_arq)
     isbn = None
+    
+    # Extrair metadados existentes para ajudar na busca
+    meta_inicial = obter_metadados_arquivo(caminho)
 
     if ext == ".pdf":
         try:
@@ -433,57 +471,57 @@ def _processar_arquivo(caminho: str) -> None:
         except Exception as e:
             logger.warning("Falha ao ler EPUB '%s': %s", nome_arq, e)
 
+    # Busca principal (pelo ISBN ou Metadados extraídos)
+    dados = None
     if isbn:
-        dados = obter_metadados_completos(isbn)
-        if dados:
-            novo = gravar_e_renomear(caminho, dados, ext)
-            logger.info("   Sucesso: %s", novo)
-        else:
-            logger.warning("   ISBN %s encontrado, mas sem dados nas APIs.", isbn)
-            isbn_manual = solicitar_isbn_manual(
-                f"ISBN '{isbn}' não retornou resultados nas APIs."
-            )
-            if isbn_manual:
-                dados = obter_metadados_completos(isbn_manual)
-                if dados:
-                    novo = gravar_e_renomear(caminho, dados, ext)
-                    logger.info("   Sucesso (manual): %s", novo)
-                else:
-                    logger.warning("   ISBN manual '%s' também sem resultados. Pulando.", isbn_manual)
+        dados = obter_metadados_completos(isbn, meta_inicial["titulo"], meta_inicial["autor"])
+    elif meta_inicial["titulo"]:
+        logger.info("   ISBN não encontrado. Tentando busca por Título/Autor...")
+        dados = obter_metadados_completos(None, meta_inicial["titulo"], meta_inicial["autor"])
+
+    if dados:
+        novo = gravar_e_renomear(caminho, dados, ext)
+        logger.info("   Sucesso: %s", novo)
     else:
-        logger.warning("   ISBN não localizado nas 10 páginas.")
-        isbn_manual = solicitar_isbn_manual("ISBN não encontrado automaticamente.")
+        # Fallback manual
+        logger.warning("   Dados não localizados automaticamente.")
+        isbn_manual = solicitar_isbn_manual("Informe o ISBN ou Título/Autor para busca manual.")
         if isbn_manual:
-            dados = obter_metadados_completos(isbn_manual)
+            # Se o usuário digitar algo que não parece um ISBN, tratamos como título
+            if re.search(r"[a-zA-Z]{3,}", isbn_manual):
+                dados = obter_metadados_completos(None, isbn_manual, "")
+            else:
+                dados = obter_metadados_completos(isbn_manual)
+            
             if dados:
                 novo = gravar_e_renomear(caminho, dados, ext)
                 logger.info("   Sucesso (manual): %s", novo)
             else:
-                logger.warning("   ISBN manual '%s' sem resultados nas APIs. Pulando.", isbn_manual)
+                logger.warning("   Busca manual sem resultados. Pulando.")
 
 
 def _escolher_formato_isbn() -> None:
     """Menu interativo para o usuário escolher o formato do ISBN."""
     global FORMATO_ISBN
     print("\n" + "=" * 50)
-    print("   📖  ISBN RENAMER — Formato do ISBN")
+    print("   [ISBN RENAMER] - Formato do ISBN")
     print("=" * 50)
-    print("\n  Escolha o formato de exibição do ISBN:\n")
-    print("   [1] Limpo (só dígitos)     → 9788535914849")
-    print("   [2] Formatado (com hífens) → 978-85-359-1484-9")
+    print("\n  Escolha o formato de exibicao do ISBN:\n")
+    print("   [1] Limpo (so digitos)     -> 9788535914849")
+    print("   [2] Formatado (com hifens) -> 978-85-359-1484-9")
     print()
     while True:
-        escolha = input("  Opção (1 ou 2) [padrão: 1]: ").strip()
+        escolha = input("  Opcao (1 ou 2) [padrao: 1]: ").strip()
         if escolha in ("", "1"):
             FORMATO_ISBN = "limpo"
-            print("\n  ✅ Formato: ISBN limpo (só dígitos)\n")
+            print("\n  [OK] Formato: ISBN limpo (so digitos)\n")
             break
         elif escolha == "2":
             FORMATO_ISBN = "formatado"
-            print("\n  ✅ Formato: ISBN formatado (com hífens)\n")
+            print("\n  [OK] Formato: ISBN formatado (com hifens)\n")
             break
         else:
-            print("  ❌ Opção inválida. Digite 1 ou 2.")
+            print("  [ERRO] Opcao invalida. Digite 1 ou 2.")
 
 
 def iniciar():
