@@ -140,7 +140,21 @@ else
     fi
     aviso "Reinicie o gerenciador de arquivos para ver o menu de contexto."
 fi
-echo ""
+# ─── Instalar Extensão Browser ────────────────────────────────────────────────
+echo "▶ Instalação da Extensão do Navegador (Native Messaging)..."
+echo "  Você conectou a extensão ISBN Renamer no Chrome/Edge? "
+echo "  [s] Sim, tenho o ID da extensão e quero configurar agora."
+echo "  [n] Não, vou fazer isso depois."
+read -p "  Opção: " config_ext_resp
+
+if [[ "$config_ext_resp" =~ ^[Ss]$ ]]; then
+    bash "$INSTALL_DIR/chrome_extension/host/install_host.sh"
+    echo ""
+else
+    info "  Extensão ignorada. Você pode rodar manualmente depois com:"
+    info "  bash $INSTALL_DIR/chrome_extension/host/install_host.sh"
+    echo ""
+fi
 
 # ─── Conclusão ────────────────────────────────────────────────────────────────
 echo "╔══════════════════════════════════════════╗"

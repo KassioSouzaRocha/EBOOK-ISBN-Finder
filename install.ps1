@@ -192,6 +192,24 @@ if (Test-Path $regScript) {
 else {
     Aviso "Script de registro nao encontrado: $regScript"
 }
+# ─── Instalar Extensão Browser ────────────────────────────────────────────────
+Write-Host "-- Instalacao da Extensao do Navegador (Native Messaging)..." -ForegroundColor Cyan
+Write-Host "  Voce conectou a extensao ISBN Renamer no Chrome/Edge?"
+Write-Host "  [S] Sim, tenho o ID da extensao e quero configurar agora."
+Write-Host "  [N] Nao, vou fazer isso depois."
+$extResp = Read-Host "  Opcao"
+
+if ($extResp -match "^[Ss]") {
+    $HostInstaller = Join-Path $InstallDir "chrome_extension\host\install_host.ps1"
+    if (Test-Path $HostInstaller) {
+        & powershell -ExecutionPolicy Bypass -File $HostInstaller
+    } else {
+        Aviso "Script install_host.ps1 nao encontrado em $HostInstaller"
+    }
+} else {
+    Info "  Extensao ignorada. Voce pode rodar manualmente depois com:"
+    Info "  powershell -ExecutionPolicy Bypass -File chrome_extension\host\install_host.ps1"
+}
 Write-Host ""
 
 # --- Conclusion ---
