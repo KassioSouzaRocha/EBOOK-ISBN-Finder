@@ -78,6 +78,22 @@ uv run isbn.py --pasta ~/Livros/
 | `--pasta DIR` | Processa todos os livros da pasta indicada em paralelo (10 arquivos simultâneos em lote, pulando prompts manuais). |
 | _(sem argumento)_ | Abre diálogo gráfico com opção de escolher arquivo ou pasta. |
 
+### Extensão de Navegador (Chrome / Chromium)
+
+O projeto inclui uma extensão (Native Messaging) que intercepta automaticamente os downloads de PDFs e EPUBs para renomeá-los em _background_.
+
+**Como instalar a extensão:**
+
+1. Acesse `chrome://extensions` (ou `brave://extensions`/`edge://extensions`) e ative o **Modo do desenvolvedor**.
+2. Clique em **Carregar sem compactação** e selecione a pasta `ISBN/chrome_extension` no seu computador.
+3. Copie o **ID da extensão** gerado pelo navegador (exemplo: `abcdefghijklmnopqrstuvwxyz`).
+4. Registre o Host local nativo executando no terminal:
+   ```bash
+   bash chrome_extension/host/install_host.sh
+   ```
+5. Você precisa substituir o "ID" falso pelo seu. Vá em `~/.config/google-chrome/NativeMessagingHosts/` (ou onde foi instruído durante o script) e abra o arquivo `com.kassio.isbn_renamer.json`.
+6. Altere a linha `chrome-extension://COLOQUE_AQUI_O_ID_DA_EXTENSAO/` colando o identificador verdadeiro. _A partir de agora qualquer livro salvo da internet passará automaticamente pelo OCR/Script escondido no terminal!_
+
 ### Via menu de contexto (clique-direito)
 
 Após a instalação, o menu de contexto aparece ao clicar com o botão direito em arquivos ou pastas no gerenciador de arquivos:

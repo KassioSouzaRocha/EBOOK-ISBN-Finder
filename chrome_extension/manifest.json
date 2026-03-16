@@ -1,0 +1,13 @@
+{
+  "name": "ISBN Renamer Auto",
+  "description": "Ao finalizar download de livros digitais (PDF, EPUB, MOBI), renomeia automaticamente usando o script ISBN Python nativo.",
+  "version": "1.0",
+  "manifest_version": 3,
+  "permissions": [
+    "downloads",
+    "nativeMessaging"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
