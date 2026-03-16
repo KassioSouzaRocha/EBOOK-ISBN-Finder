@@ -95,14 +95,15 @@ Após a instalação, o menu de contexto aparece ao clicar com o botão direito 
 1. **Escolha de Formato do ISBN:** Ao iniciar, o script pergunta via terminal se o ISBN salvo internamente deve ser `"limpo"` (apenas números) ou `"formatado"` (com hifens).
 2. **Seleção do Alvo:** Você pode processar um único arquivo ou todos os livros de uma pasta inteira.
 3. **Busca nas Tags do Documento (Primeira Etapa do Processamento):** O sistema examina se o arquivo já possui Título e Autor preenchidos em seus metadados internos. Se houver, ele exibe essas informações e pergunta se você deseja renomear o arquivo imediatamente usando apenas esses dados (poupando a busca por ISBN nas etapas seguintes).
-4. **Extração de ISBN:** Caso opte por não usar as tags locais, o script procura pelo ISBN no texto do arquivo:
+4. **Busca Focada em "Folha de Créditos":** Caso a busca por tags falhe ou seja ignorada, o script avalia primeiramente a página 4 do documento (onde tipicamente fica a folha de rosto/créditos). Se achar informações úteis, tenta extrair de imediato o ISBN e o **Ano de Publicação** diretamente dali.
+5. **Extração Ampla de ISBN:** Se a folha de créditos não bastar, o script amplia a procura pelo ISBN no texto do arquivo:
    - **PDF:** Usa o `pdfminer` (texto) para ler as 10 primeiras e as 10 últimas páginas. Se o ISBN não for localizado, aciona OCR de alta definição (600 DPI) com `pytesseract` (com suporte as últimas páginas do PDF) aliado a pré-processamento de imagem automático.
    - **EPUB:** Usa `ebooklib` + `BeautifulSoup` para examinar o texto interno à procura do ISBN (também verificando os 10 primeiros e os 10 últimos documentos do EPUB).
-5. **Pesquisa em APIs (CBL, Google Books e Open Library):**
+6. **Pesquisa em APIs (CBL, Google Books e Open Library):**
    - O projeto pesquisa os metadados do livro nas plataformas. Se extraiu o ISBN com sucesso, busca via ISBN.
    - Se o ISBN original **não** existir no texto do livro, ele usa as informações de Título/Autor (obtidas no passo 3) como _fallback_ realizando busca direta pelas bases on-line.
-6. **Intervenção Manual (Fallback Final):** Caso as buscas automáticas não obtenham sucesso absoluto, o script avisa no terminal e aguarda você digitar manualmente um ISBN ou termo de Título/Autor para nova tentativa de pesquisa.
-7. **Gravação e Renomeio Final:** Após obter o Título e o Autor limpos e oficiais pelas APIs, o script injeta os novos metadados definitivamente nas propriedades do arquivo longo (via Python nativo ou `exiftool`) e renomeia-o numeração e padronização impecável: `Título - Autor.ext`.
+7. **Intervenção Manual (Fallback Final):** Caso as buscas automáticas não obtenham sucesso absoluto, o script avisa no terminal e aguarda você digitar manualmente um ISBN ou termo de Título/Autor para nova tentativa de pesquisa.
+8. **Gravação e Renomeio Final:** Após obter o Título e o Autor limpos e oficiais (e o Ano, se disponível), o script injeta os novos metadados definitivamente nas propriedades do arquivo longo (via Python nativo ou `exiftool`) com a tag *Date/CreateDate* e renomeia-o numeração e padronização impecável: `Título - Autor - Ano.ext` (ou apenas sem o ano se ele não foi encontrado em nenhuma etapa).
 
 
 ## Estrutura do projeto

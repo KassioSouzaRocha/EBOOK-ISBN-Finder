@@ -403,28 +403,42 @@ def obter_metadados_completos(isbn: str, titulo_sugerido: str = "", autor_sugeri
 # --- GESTÃO DE ARQUIVOS ---
 
 def gravar_e_renomear(caminho: str, dados: dict, ext: str) -> str:
-    """Grava metadados no arquivo e o renomeia com título e autor."""
+    """Grava metadados no arquivo e o renomeia com título, autor e ano."""
     titulo = dados["titulo"][:80]
     autor = dados["autor"][:50]
+    ano = dados.get("ano", "")
 
     if ext == ".epub":
         try:
             livro = epub.read_epub(caminho)
             livro.set_unique_metadata("DC", "title", titulo)
             livro.set_unique_metadata("DC", "creator", autor)
+            if ano:
+                livro.set_unique_metadata("DC", "date", ano)
             epub.write_epub(caminho, livro)
         except Exception as e:
             logger.warning("Não foi possível gravar metadados no EPUB: %s", e)
     else:
+        args_exif = ["exiftool", f"-Title={titulo}", f"-Author={autor}"]
+        if ano: # No PDF/MOBI, tentamos mapear CreateDate para ano
+            args_exif.append(f"-CreateDate={ano}-01-01 00:00:00")
+            args_exif.append(f"-Date={ano}")
+        args_exif.extend(["-overwrite_original", caminho])
+        
         resultado = subprocess.run(
-            ["exiftool", f"-Title={titulo}", f"-Author={autor}", "-overwrite_original", caminho],
+            args_exif,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         if resultado.returncode != 0:
             logger.warning("exiftool retornou código de erro para: %s", caminho)
 
-    nome_base = f"{titulo} - {autor}"
+    # Padroniza "Título - Autor" ou "Titulo - Autor - Ano"
+    if ano:
+        nome_base = f"{titulo} - {autor} - {ano}"
+    else:
+        nome_base = f"{titulo} - {autor}"
+        
     nome_limpo = re.sub(r'[\\/*?:"<>|\t\n\r\f\v]', "", nome_base)
     nome_limpo = re.sub(r"\s+", " ", nome_limpo).strip()
     novo_nome = f"{nome_limpo}{ext}"
@@ -475,6 +489,7 @@ def _processar_arquivo(caminho: str) -> None:
 
     logger.info("\nProcessando: %s", nome_arq)
     isbn = None
+    ano_creditos = ""
     
     # Extrair metadados existentes para ajudar na busca
     meta_inicial = obter_metadados_arquivo(caminho)
@@ -491,7 +506,8 @@ def _processar_arquivo(caminho: str) -> None:
             dados = {
                 "titulo": titulo_meta or "Sem Titulo",
                 "autor": autor_meta or "Sem Autor",
-                "editora": "S/E"
+                "editora": "S/E",
+                "ano": ""
             }
             novo = gravar_e_renomear(caminho, dados, ext)
             logger.info("   Sucesso (metadados locais): %s", novo)
@@ -500,20 +516,36 @@ def _processar_arquivo(caminho: str) -> None:
     from pdf2image import pdfinfo_from_path
     if ext == ".pdf":
         try:
-            isbn = extrair_isbn_do_texto(extract_text(caminho, page_numbers=list(range(10))))
-            if not isbn:
-                try:
-                    info = pdfinfo_from_path(caminho, poppler_path=POPPLER_PATH)
-                    total_paginas = info["Pages"]
-                    if total_paginas > 10:
-                        first_last = max(10, total_paginas - 10)
-                        paginas_finais = list(range(first_last, total_paginas))
-                        texto_final = extract_text(caminho, page_numbers=paginas_finais)
-                        isbn = extrair_isbn_do_texto(texto_final)
-                except Exception as e:
-                    logger.debug("Falha ao ler ultimas paginas com pdfminer: %s", e)
+            # 1ª Tentativa: Avalia a página 4 (geralmente folha de rosto/créditos)
+            texto_p4 = extract_text(caminho, page_numbers=[3]) # Índice 0
+            if texto_p4:
+                # Tenta ano e ISBN
+                isbn = extrair_isbn_do_texto(texto_p4)
+                # Tenta pegar um ano com regex de 4 dígitos entre 1900-2099 solto no texto
+                match_ano = re.search(r'\b(19\d{2}|20[0-2]\d)\b', texto_p4)
+                if match_ano:
+                    ano_creditos = match_ano.group(1)
         except Exception as e:
-            logger.debug("Extração de texto via pdfminer falhou: %s", e)
+            logger.debug("Falha na leitura da pag 4: %s", e)
+
+        # 2ª Tentativa: Busca padrão (10 primeiras, 10 ultimas) se falhou nela
+        if not isbn:
+            try:
+                isbn = extrair_isbn_do_texto(extract_text(caminho, page_numbers=list(range(10))))
+                if not isbn:
+                    try:
+                        info = pdfinfo_from_path(caminho, poppler_path=POPPLER_PATH)
+                        total_paginas = info["Pages"]
+                        if total_paginas > 10:
+                            first_last = max(10, total_paginas - 10)
+                            paginas_finais = list(range(first_last, total_paginas))
+                            texto_final = extract_text(caminho, page_numbers=paginas_finais)
+                            isbn = extrair_isbn_do_texto(texto_final)
+                    except Exception as e:
+                        logger.debug("Falha ao ler ultimas paginas com pdfminer: %s", e)
+            except Exception as e:
+                logger.debug("Extração de texto via pdfminer falhou: %s", e)
+                
         if not isbn:
             isbn = extrair_isbn_do_texto(realizar_ocr_hd(caminho))
 
@@ -523,9 +555,15 @@ def _processar_arquivo(caminho: str) -> None:
             texto = ""
             itens = list(livro.get_items_of_type(ITEM_DOCUMENT))
             
-            # Lê os primeiros 10 documentos
+            # Pega ano nos primeiros itens
             for item in itens[:10]:
-                texto += BeautifulSoup(item.get_content(), "lxml").get_text()
+                content = BeautifulSoup(item.get_content(), "lxml").get_text()
+                texto += content
+                if not ano_creditos:
+                    match_ano = re.search(r'\b(19\d{2}|20[0-2]\d)\b', content)
+                    if match_ano:
+                       ano_creditos = match_ano.group(1)
+
             isbn = extrair_isbn_do_texto(texto)
             
             # Lê os últimos 10 se não achou e houver mais itens
@@ -545,6 +583,22 @@ def _processar_arquivo(caminho: str) -> None:
         logger.info("   ISBN não encontrado. Tentando busca por Título/Autor...")
         dados = obter_metadados_completos(None, meta_inicial["titulo"], meta_inicial["autor"])
 
+    # Se as buscas em APIs falharem e ele não achar absolutamente NADA,
+    # tenta usar o meta_inicial + ano extraído da folha de rosto
+    if not dados and (meta_inicial["titulo"] or meta_inicial["autor"]):
+         logger.info("   Nenhum dado das APIs encontrado. Utilizando tags originais extraídas como metadados finais.")
+         dados = {
+             "titulo": meta_inicial["titulo"] or "Sem Título",
+             "autor": meta_inicial["autor"] or "Sem Autor",
+             "editora": "S/E",
+         }
+
+    # Atribui o ano de edição/créditos encontrado aos dados antes de gravar (se não existir, fica vazio)
+    if dados:
+         # Evitar sobrescrever se a API retornou o ano (algumas retornam mas não temos mapeado atualmente na API).
+         # Garantimos o ano_creditos na gravação extra:
+         dados["ano"] = ano_creditos
+
     if dados:
         novo = gravar_e_renomear(caminho, dados, ext)
         logger.info("   Sucesso: %s", novo)
@@ -560,6 +614,7 @@ def _processar_arquivo(caminho: str) -> None:
                 dados = obter_metadados_completos(isbn_manual)
             
             if dados:
+                dados["ano"] = ano_creditos # Adiciona ano manual também (se ele achou antes em folha de rosto)
                 novo = gravar_e_renomear(caminho, dados, ext)
                 logger.info("   Sucesso (manual): %s", novo)
             else:
