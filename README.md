@@ -62,10 +62,11 @@ uv sync
 # Abrir diálogo gráfico para escolher arquivo ou pasta
 uv run isbn.py
 
-# Processar um único arquivo
+# Processar um único arquivo (interativo, exibe prompts se necessário)
 uv run isbn.py --arquivo "Livro.pdf"
 
-# Processar todos os livros de uma pasta
+# Processar todos os livros de uma pasta (Modo Lote / Paralelo)
+# Processa 10 arquivos simultaneamente e desativa paradas para perguntas (interações manuais)
 uv run isbn.py --pasta ~/Livros/
 ```
 
@@ -73,9 +74,9 @@ uv run isbn.py --pasta ~/Livros/
 
 | Argumento | Descrição |
 |---|---|
-| `--arquivo FILE` | Processa um único arquivo (PDF, EPUB ou MOBI) |
-| `--pasta DIR` | Processa todos os livros da pasta indicada |
-| _(sem argumento)_ | Abre diálogo gráfico com opção de escolher arquivo ou pasta |
+| `--arquivo FILE` | Processa um único arquivo (PDF, EPUB ou MOBI) de forma interativa. |
+| `--pasta DIR` | Processa todos os livros da pasta indicada em paralelo (10 arquivos simultâneos em lote, pulando prompts manuais). |
+| _(sem argumento)_ | Abre diálogo gráfico com opção de escolher arquivo ou pasta. |
 
 ### Via menu de contexto (clique-direito)
 

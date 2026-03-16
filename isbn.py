@@ -457,15 +457,15 @@ def gravar_e_renomear(caminho: str, dados: dict, ext: str) -> str:
 
 # --- CORREÇÃO MANUAL ---
 
-def solicitar_isbn_manual(motivo: str) -> str | None:
+def solicitar_isbn_manual(motivo: str, interativo: bool = True) -> str | None:
     """Solicita que o usuário informe um ISBN manualmente no terminal.
-
-    Args:
-        motivo: Mensagem descrevendo por que o ISBN precisa ser corrigido.
-
-    Returns:
-        O ISBN digitado (com hífens/espaços preservados) ou None se pulado.
+    
+    Se interativo for False, apenas registra o aviso e pula.
     """
+    if not interativo:
+        logger.warning(f"  [AVISO] {motivo} (Pulado em modo pasta/batch)")
+        return None
+
     print(f"\n  [AVISO] {motivo}")
     print("  Digite o ISBN correto (ou pressione Enter para pular): ", end="", flush=True)
     resposta = input().strip()
@@ -477,7 +477,7 @@ def solicitar_isbn_manual(motivo: str) -> str | None:
 
 # --- PONTO DE ENTRADA ---
 
-def _processar_arquivo(caminho: str) -> None:
+def _processar_arquivo(caminho: str, interativo: bool = True) -> None:
     """Processa um único arquivo de livro: extrai ISBN, busca dados e renomeia."""
     nome_arq = os.path.basename(caminho)
     ext = os.path.splitext(nome_arq)[1].lower()
@@ -498,20 +498,21 @@ def _processar_arquivo(caminho: str) -> None:
     autor_meta = meta_inicial.get("autor", "").strip()
     
     if titulo_meta or autor_meta:
-        print("\n  [METADADOS ENCONTRADOS NAS TAGS DO ARQUIVO]")
-        print(f"    Titulo: {titulo_meta or 'N/A'}")
-        print(f"    Autor:  {autor_meta or 'N/A'}")
-        escolha = input("  Deseja renomear o arquivo usando apenas essas informacoes? (s/n) [padrao: n]: ").strip().lower()
-        if escolha == "s":
-            dados = {
-                "titulo": titulo_meta or "Sem Titulo",
-                "autor": autor_meta or "Sem Autor",
-                "editora": "S/E",
-                "ano": ""
-            }
-            novo = gravar_e_renomear(caminho, dados, ext)
-            logger.info("   Sucesso (metadados locais): %s", novo)
-            return
+        if interativo:
+            print("\n  [METADADOS ENCONTRADOS NAS TAGS DO ARQUIVO]")
+            print(f"    Titulo: {titulo_meta or 'N/A'}")
+            print(f"    Autor:  {autor_meta or 'N/A'}")
+            escolha = input("  Deseja renomear o arquivo usando apenas essas informacoes? (s/n) [padrao: n]: ").strip().lower()
+            if escolha == "s":
+                dados = {
+                    "titulo": titulo_meta or "Sem Titulo",
+                    "autor": autor_meta or "Sem Autor",
+                    "editora": "S/E",
+                    "ano": ""
+                }
+                novo = gravar_e_renomear(caminho, dados, ext)
+                logger.info("   Sucesso (metadados locais): %s", novo)
+                return
 
     from pdf2image import pdfinfo_from_path
     if ext == ".pdf":
@@ -605,7 +606,7 @@ def _processar_arquivo(caminho: str) -> None:
     else:
         # Fallback manual
         logger.warning("   Dados não localizados automaticamente.")
-        isbn_manual = solicitar_isbn_manual("Informe o ISBN ou Título/Autor para busca manual.")
+        isbn_manual = solicitar_isbn_manual("Informe o ISBN ou Título/Autor para busca manual.", interativo=interativo)
         if isbn_manual:
             # Se o usuário digitar algo que não parece um ISBN, tratamos como título
             if re.search(r"[a-zA-Z]{3,}", isbn_manual):
@@ -658,10 +659,12 @@ def iniciar():
         if not os.path.isfile(alvo):
             logger.error("Arquivo não encontrado: %s", alvo)
             return
-        _processar_arquivo(alvo)
+        _processar_arquivo(alvo, interativo=True)
         return
 
     # modo == "pasta"
+    from concurrent.futures import ThreadPoolExecutor
+    
     pasta = alvo
     formatos = (".pdf", ".epub", ".mobi")
     arquivos = sorted([f for f in os.listdir(pasta) if f.lower().endswith(formatos)])
@@ -670,13 +673,13 @@ def iniciar():
         logger.info("Nenhum arquivo encontrado na pasta: %s", pasta)
         return
 
-    logger.info("Encontrados %d arquivo(s) para processar.", len(arquivos))
+    logger.info("Encontrados %d arquivo(s) para processar. \n[MODO PASTA] Iniciando processamento paralelo (10 por vez) com prompts manuais desativados.", len(arquivos))
 
-    for nome_arq in arquivos:
-        caminho = os.path.join(pasta, nome_arq)
-        _processar_arquivo(caminho)
-        time.sleep(1)
-
+    caminhos = [os.path.join(pasta, nome_arq) for nome_arq in arquivos]
+    # Usar ThreadPool para 10 arquivos paralelos
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        for caminho in caminhos:
+            executor.submit(_processar_arquivo, caminho, False)
 
 if __name__ == "__main__":
     iniciar()
