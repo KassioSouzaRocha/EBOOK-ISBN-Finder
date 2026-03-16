@@ -12,7 +12,6 @@ import pytesseract
 import requests
 from bs4 import BeautifulSoup
 from ebooklib import epub, ITEM_DOCUMENT
-from pdf2image import convert_from_path
 from pdfminer.high_level import extract_text
 from PIL import Image, ImageOps
 from tkinter import Tk, filedialog
@@ -203,9 +202,11 @@ def processar_imagem_ocr(imagem: Image.Image) -> Image.Image:
     return imagem
 
 
+from pdf2image import convert_from_path, pdfinfo_from_path
+
 def realizar_ocr_hd(caminho_pdf: str) -> str:
-    """Realiza OCR em alta definição (600 DPI) nas primeiras 10 páginas do PDF."""
-    logger.info("[OCR HD] Analisando 10 páginas em 600 DPI...")
+    """Realiza OCR em alta definição (600 DPI) nas primeiras e últimas 10 páginas do PDF."""
+    logger.info("[OCR HD] Analisando 10 primeiras páginas em 600 DPI...")
     try:
         paginas = convert_from_path(
             caminho_pdf,
@@ -218,6 +219,31 @@ def realizar_ocr_hd(caminho_pdf: str) -> str:
         for pg in paginas:
             pg_otimizada = processar_imagem_ocr(pg)
             texto_total += pytesseract.image_to_string(pg_otimizada, config="--psm 3")
+            
+        # Se encontrou nas primeiras, nem gasta tempo com as ultimas
+        if extrair_isbn_do_texto(texto_total):
+             return texto_total
+             
+        # Se não encontrou, buscar nas ultimas 10
+        try:
+            info = pdfinfo_from_path(caminho_pdf, poppler_path=POPPLER_PATH)
+            total_paginas = info["Pages"]
+            if total_paginas > 10:
+                logger.info(f"[OCR HD] Analisando 10 últimas páginas (de {total_paginas}) em 600 DPI...")
+                first_last = max(11, total_paginas - 9)
+                paginas_finais = convert_from_path(
+                    caminho_pdf,
+                    first_page=first_last,
+                    last_page=total_paginas,
+                    dpi=600,
+                    poppler_path=POPPLER_PATH,
+                )
+                for pg in paginas_finais:
+                    pg_otimizada = processar_imagem_ocr(pg)
+                    texto_total += pytesseract.image_to_string(pg_otimizada, config="--psm 3")
+        except Exception as e:
+            logger.debug("[OCR HD] Erro ao analisar as últimas páginas: %s", e)
+            
         return texto_total
     except Exception as e:
         logger.warning("[OCR HD] Falhou: %s", e)
@@ -453,9 +479,39 @@ def _processar_arquivo(caminho: str) -> None:
     # Extrair metadados existentes para ajudar na busca
     meta_inicial = obter_metadados_arquivo(caminho)
 
+    titulo_meta = meta_inicial.get("titulo", "").strip()
+    autor_meta = meta_inicial.get("autor", "").strip()
+    
+    if titulo_meta or autor_meta:
+        print("\n  [METADADOS ENCONTRADOS NAS TAGS DO ARQUIVO]")
+        print(f"    Titulo: {titulo_meta or 'N/A'}")
+        print(f"    Autor:  {autor_meta or 'N/A'}")
+        escolha = input("  Deseja renomear o arquivo usando apenas essas informacoes? (s/n) [padrao: n]: ").strip().lower()
+        if escolha == "s":
+            dados = {
+                "titulo": titulo_meta or "Sem Titulo",
+                "autor": autor_meta or "Sem Autor",
+                "editora": "S/E"
+            }
+            novo = gravar_e_renomear(caminho, dados, ext)
+            logger.info("   Sucesso (metadados locais): %s", novo)
+            return
+
+    from pdf2image import pdfinfo_from_path
     if ext == ".pdf":
         try:
             isbn = extrair_isbn_do_texto(extract_text(caminho, page_numbers=list(range(10))))
+            if not isbn:
+                try:
+                    info = pdfinfo_from_path(caminho, poppler_path=POPPLER_PATH)
+                    total_paginas = info["Pages"]
+                    if total_paginas > 10:
+                        first_last = max(10, total_paginas - 10)
+                        paginas_finais = list(range(first_last, total_paginas))
+                        texto_final = extract_text(caminho, page_numbers=paginas_finais)
+                        isbn = extrair_isbn_do_texto(texto_final)
+                except Exception as e:
+                    logger.debug("Falha ao ler ultimas paginas com pdfminer: %s", e)
         except Exception as e:
             logger.debug("Extração de texto via pdfminer falhou: %s", e)
         if not isbn:
@@ -465,9 +521,19 @@ def _processar_arquivo(caminho: str) -> None:
         try:
             livro = epub.read_epub(caminho)
             texto = ""
-            for item in list(livro.get_items_of_type(ITEM_DOCUMENT))[:10]:
+            itens = list(livro.get_items_of_type(ITEM_DOCUMENT))
+            
+            # Lê os primeiros 10 documentos
+            for item in itens[:10]:
                 texto += BeautifulSoup(item.get_content(), "lxml").get_text()
             isbn = extrair_isbn_do_texto(texto)
+            
+            # Lê os últimos 10 se não achou e houver mais itens
+            if not isbn and len(itens) > 10:
+                texto_final = ""
+                for item in itens[-10:]:
+                    texto_final += BeautifulSoup(item.get_content(), "lxml").get_text()
+                isbn = extrair_isbn_do_texto(texto_final)
         except Exception as e:
             logger.warning("Falha ao ler EPUB '%s': %s", nome_arq, e)
 

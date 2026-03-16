@@ -96,8 +96,8 @@ Após a instalação, o menu de contexto aparece ao clicar com o botão direito 
 2. **Seleção do Alvo:** Você pode processar um único arquivo ou todos os livros de uma pasta inteira.
 3. **Busca nas Tags do Documento (Primeira Etapa do Processamento):** O sistema examina se o arquivo já possui Título e Autor preenchidos em seus metadados internos. Se houver, ele exibe essas informações e pergunta se você deseja renomear o arquivo imediatamente usando apenas esses dados (poupando a busca por ISBN nas etapas seguintes).
 4. **Extração de ISBN:** Caso opte por não usar as tags locais, o script procura pelo ISBN no texto do arquivo:
-   - **PDF:** Usa o `pdfminer` (texto). Se o ISBN não for localizado, aciona OCR de alta definição (600 DPI) com `pytesseract` aliado a pré-processamento de imagem automático.
-   - **EPUB:** Usa `ebooklib` + `BeautifulSoup` para examinar o texto interno à procura do ISBN.
+   - **PDF:** Usa o `pdfminer` (texto) para ler as 10 primeiras e as 10 últimas páginas. Se o ISBN não for localizado, aciona OCR de alta definição (600 DPI) com `pytesseract` (com suporte as últimas páginas do PDF) aliado a pré-processamento de imagem automático.
+   - **EPUB:** Usa `ebooklib` + `BeautifulSoup` para examinar o texto interno à procura do ISBN (também verificando os 10 primeiros e os 10 últimos documentos do EPUB).
 5. **Pesquisa em APIs (CBL, Google Books e Open Library):**
    - O projeto pesquisa os metadados do livro nas plataformas. Se extraiu o ISBN com sucesso, busca via ISBN.
    - Se o ISBN original **não** existir no texto do livro, ele usa as informações de Título/Autor (obtidas no passo 3) como _fallback_ realizando busca direta pelas bases on-line.
